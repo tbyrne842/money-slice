@@ -1,0 +1,28 @@
+# Rule-based categorisation. Matching is case-insensitive substring
+# search against description_raw, checked in file order - first match
+# wins, so put more specific rules above general ones.
+#
+# This will never be perfect (bank descriptions are inconsistent junk),
+# that's expected. The goal is to auto-categorise 80%+ so the weekly
+# "review uncategorised" pass is small.
+
+- category: "groceries"
+  matches: ["tesco", "sainsbury", "asda", "lidl", "aldi", "spar", "eurospar", "marks & spencer food"]
+
+- category: "dining_out"
+  matches: ["deliveroo", "just eat", "uber eats", "mcdonald", "costa", "starbucks", "greggs"]
+
+- category: "transport"
+  matches: ["translink", "uber", "shell", "bp fuel", "circle k", "esso"]
+
+- category: "subscriptions"
+  matches: ["netflix", "spotify", "amazon prime", "disney+", "youtube premium", "apple.com/bill"]
+
+- category: "utilities"
+  matches: ["power ni", "firmus energy", "budget energy", "nie networks", "bt group", "sky "]
+
+- category: "household"
+  matches: ["b&q", "wickes", "ikea", "dunelm", "homebase"]
+
+- category: "health"
+  matches: ["boots", "lloyds pharmacy", "gp surgery"]
