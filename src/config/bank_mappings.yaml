@@ -1,0 +1,62 @@
+# One entry per distinct CSV export format you encounter.
+# Add a new block whenever a bank's export doesn't match an existing one -
+# most "high street" banks share 1-2 common shapes, digital banks (Monzo,
+# Starling) tend to have their own.
+#
+# Fields:
+#   date_col        - column containing the transaction date
+#   date_format      - strptime format string
+#   description_col - column containing merchant/description text
+#   amount_mode      - "single_signed" (one column, negative=out) or
+#                       "debit_credit" (separate debit/credit columns)
+#   amount_col       - used when amount_mode = single_signed
+#   debit_col / credit_col - used when amount_mode = debit_credit
+#   debit_is_positive - if true, debit column values are positive numbers
+#                        that need to be negated (common in UK bank exports)
+#   invert_sign      - only for single_signed mode. Set true when the
+#                        source's convention is opposite ours (we use
+#                        negative=money out). Credit cards commonly do
+#                        this: positive = spend, negative = payment/refund.
+#   category_col     - optional. If the CSV includes the provider's own
+#                        category (credit cards often do), capture it into
+#                        source_category for reference. Your own rules
+#                        still run separately and populate `category`.
+
+generic_uk_debit_credit:
+  date_col: "Date"
+  date_format: "%d/%m/%Y"
+  description_col: "Description"
+  amount_mode: "debit_credit"
+  debit_col: "Debit Amount"
+  credit_col: "Credit Amount"
+  debit_is_positive: true
+
+natwest:
+  date_col: "Date"
+  date_format: "%d %b %Y"
+  description_col: "Description"
+  amount_mode: "single_signed"
+  amount_col: "Value"
+
+monzo:
+  date_col: "Date"
+  date_format: "%d/%m/%Y"
+  description_col: "Name"
+  amount_mode: "single_signed"
+  amount_col: "Amount"
+
+amex:
+  date_col: "Date"
+  date_format: "%d/%m/%Y"
+  description_col: "Description"
+  amount_mode: "single_signed"
+  amount_col: "Amount"
+  invert_sign: true
+  category_col: "Category"
+
+starling:
+  date_col: "Date"
+  date_format: "%d/%m/%Y"
+  description_col: "Counter Party"
+  amount_mode: "single_signed"
+  amount_col: "Amount (GBP)"
