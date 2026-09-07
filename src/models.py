@@ -4,8 +4,9 @@ Normalized schema for the finance tracker.
 Every ingestion source (CSV today, GoCardless later) must produce
 objects matching these models. This is the contract that keeps
 ingestion adapters decoupled from everything downstream
-(categorization, household splitting, reporting).
+(categorisation, household splitting, reporting).
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -38,9 +39,11 @@ class Transaction(BaseModel):
     amount: float  # negative = money out, positive = money in
     currency: str = "GBP"
     description_raw: str
-    merchant: Optional[str] = None  # cleaned/extracted, filled by categorizer
+    merchant: Optional[str] = None  # cleaned/extracted, filled by categoriser
     category: Optional[str] = None
-    source_category: Optional[str] = None  # provider's own category, if the CSV includes one (e.g. Amex) - kept for reference, not auto-applied to `category`
+    source_category: Optional[str] = (
+        None  # provider's own category, if the CSV includes one (e.g. Amex) - kept for reference, not auto-applied to `category`
+    )
     is_shared: bool = False
     split_ratio: Optional[float] = None  # None = use household default
     source: str = "csv"  # "csv" | "gocardless" | "manual"
