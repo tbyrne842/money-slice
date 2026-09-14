@@ -3,9 +3,13 @@ Tests for the Transaction model - specifically source_hash, since
 that's what makes re-imports safe. If this breaks, duplicate imports
 stop being prevented.
 """
+
 from datetime import date
 
-from models import Transaction
+import pytest
+from pydantic import ValidationError
+
+from models import Account, AccountOwner, Transaction
 
 
 def make_txn(**overrides) -> Transaction:
@@ -60,3 +64,65 @@ def test_whitespace_in_description_is_collapsed():
 def test_source_category_defaults_to_none():
     txn = make_txn()
     assert txn.source_category is None
+
+
+def make_account(**overrides) -> Account:
+    defaults = dict(
+        id="natwest-cc-tiarnan",
+        owner=AccountOwner.TIARNAN,
+        bank_name="NatWest",
+        account_type="credit_card",
+    )
+    defaults.update(overrides)
+    return Account(**defaults)
+
+
+def test_account_accepts_valid_required_fields():
+    account = make_account()
+    assert account.id == "natwest-cc-tiarnan"
+    assert account.owner == AccountOwner.TIARNAN
+    assert account.bank_name == "NatWest"
+    assert account.account_type == "credit_card"
+
+
+def test_account_currency_defaults_to_gbp():
+    account = make_account()
+    assert account.currency == "GBP"
+
+
+def test_account_currency_can_be_overridden():
+    account = make_account(currency="EUR")
+    assert account.currency == "EUR"
+
+
+def test_account_created_at_is_set_automatically():
+    account = make_account()
+    assert account.created_at is not None
+
+
+@pytest.mark.parametrize("owner", ["tiarnan", "deirbhile", "joint"])
+def test_account_accepts_all_valid_owner_values(owner):
+    account = make_account(owner=owner)
+    assert account.owner == owner
+
+
+def test_account_rejects_invalid_owner():
+    # Only tiarnan / deirbhile / joint are valid - anything else (e.g. a
+    # typo, or a third person) should fail validation rather than being
+    # silently accepted as an arbitrary string.
+    with pytest.raises(ValidationError):
+        make_account(owner="not_a_real_person")
+
+
+@pytest.mark.parametrize("missing_field", ["id", "owner", "bank_name", "account_type"])
+def test_account_requires_all_core_fields(missing_field):
+    fields = dict(
+        id="natwest-cc-tiarnan",
+        owner=AccountOwner.TIARNAN,
+        bank_name="NatWest",
+        account_type="credit_card",
+    )
+    del fields[missing_field]
+
+    with pytest.raises(ValidationError):
+        Account(**fields)

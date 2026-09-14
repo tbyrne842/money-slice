@@ -38,6 +38,20 @@ natwest:
   amount_mode: "single_signed"
   amount_col: "Value"
 
+natwest_credit_card:
+  # NatWest Mastercard CREDIT CARD export. Same column layout as the
+  # current account above, but the opposite sign convention: PURCHASE
+  # rows are positive, PAYMENT rows (paying the card down) are negative.
+  # Also has a trailing "Balance as at ..." summary row with a blank
+  # Value column - the importer skips any row with no amount, so that
+  # row is dropped automatically rather than imported as a transaction.
+  date_col: "Date"
+  date_format: "%d %b %Y"
+  description_col: "Description"
+  amount_mode: "single_signed"
+  amount_col: "Value"
+  invert_sign: true
+
 monzo:
   date_col: "Date"
   date_format: "%d/%m/%Y"
