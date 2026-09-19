@@ -1,28 +1,113 @@
-# Rule-based categorisation. Matching is case-insensitive substring
+# Rule-based categorization. Matching is case-insensitive substring
 # search against description_raw, checked in file order - first match
 # wins, so put more specific rules above general ones.
 #
 # This will never be perfect (bank descriptions are inconsistent junk),
-# that's expected. The goal is to auto-categorise 80%+ so the weekly
-# "review uncategorised" pass is small.
+# that's expected. The goal is to auto-categorize 80%+ so the weekly
+# "review uncategorized" pass is small.
+#
+# Substring matching works regardless of a payment processor prefix
+# (DOJO*, SQ *, ZETTLE_*, SHIFT4*, SUMUP *) - so most entries below
+# match on the venue name itself, not the processor.
 
 - category: "groceries"
-  matches: ["tesco", "sainsbury", "asda", "lidl", "aldi", "spar", "eurospar", "marks & spencer food"]
+  matches: ["tesco", "sainsbury", "asda", "lidl", "aldi", "spar", "eurospar", "marks & spencer food", "marks & spencer gatwic", "mulgrews", "buywholefoodsonline", "vegetology", "bulk colchester", "protein works", "ls the vineyard", "centra", "huel.com", "mace", "first and last off", "london bridge superma"]
 
 - category: "dining_out"
-  matches: ["deliveroo", "just eat", "uber eats", "mcdonald", "costa", "starbucks", "greggs"]
+  matches: ["deliveroo", "just eat", "uber eats", "mcdonald", "costa", "starbucks", "greggs", "boojum", "badmaash", "tap room", "the bowery", "khao soi", "ragin ramen", "safari grill", "jumon", "satay street", "hustle cafe", "caffe nero", "subway", "pizza on the square", "the flavoursmyth", "the grove fish", "friar tucks", "k space", "muriels cafe", "the jeggy nettle", "antojitos", "truffleupagus", "phin coffee", "black sheep cof", "dorkyfrench", "glasgow airport - starb", "shorthorn kitc", "96 botanic avenue"]
 
 - category: "transport"
-  matches: ["translink", "uber", "shell", "bp fuel", "circle k", "esso"]
+  matches: ["translink", "uber", "shell", "bp fuel", "circle k", "esso", "hrl brackenvale", "nicholls fuel", "dvla-isz", "carryduff tyre centre", "lake road services", "applegreen", "nyx*maxoluk", "nayaxau", "tfl travel", "first glasgow", "voi technology", "smart parking", "ringgo parking", "car park services", "saint annes square car", "apcoa parking", "armagh city -banbridge"]
 
 - category: "subscriptions"
-  matches: ["netflix", "spotify", "amazon prime", "disney+", "youtube premium", "apple.com/bill"]
+  matches: ["netflix", "spotify", "amazon prime", "prime*", "disney+", "youtube premium", "apple.com/bill"]
 
 - category: "utilities"
-  matches: ["power ni", "firmus energy", "budget energy", "nie networks", "bt group", "sky "]
+  matches: ["power ni", "firmus energy", "budget energy", "nie networks", "bt group", "sky ", "ee limited", "ee ltd", "british telecom", "bt uk plc", "bt one braham", "bt belfast riverside", "sse airtricity gas", "share energy tradi"]
 
 - category: "household"
-  matches: ["b&q", "wickes", "ikea", "dunelm", "homebase"]
+  matches: ["b&q", "bandq", "wickes", "ikea", "dunelm", "homebase", "screwfix", "procook", "the range", "kukoon rugs", "sostrene grene", "denby rtl", "4ourhouse.co.uk", "b&m retail", "b & m retail", "b&m 098", "woodlawn garden", "molton brown", "post office", "oven and ap", "greenbelt group"]
 
 - category: "health"
-  matches: ["boots", "lloyds pharmacy", "gp surgery"]
+  matches: ["boots", "lloyds pharmacy", "gp surgery", "1483 - belfast forestsi", "1006 - belfast castle", "1401 - belfast boucher", "carryduff pharmacy", "superdrug", "jeremy andrew hewitt", "679 - sprucefield"]
+
+- category: "pets"
+  matches: ["animed direct", "pets at home", "flynn vets"]
+
+- category: "insurance"
+  matches: ["l&g insurance", "admiral insurance", "hiscox"]
+
+- category: "credit_card_payment"
+  matches: ["american express", "nw world mastercar", "payment received - thank you", "direct debit payment"]
+
+- category: "mortgage_and_loans"
+  matches: ["barclays uk mtges", "natwest loan", "new loan", "v12 retail finance", "vwfs uk limited", "halifax"]
+
+- category: "travel"
+  matches: ["british airways", "ryanair", "easyjet", "airbnb", "travelodge", "hertz", "timedesign tokyo", "hotrod citytour", "hotel stary krakow", "barrhead travel", "belfast international", "ivanhoe hotel", "hillyard house hotel", "bellingham castle", "tetto ", "hlt stakis", "isla baillie tours", "avolta", "wdf main", "w h smith"]
+
+- category: "clothing"
+  matches: ["tkmaxx", "tk maxx", "uniqlo", "zara uk", "h&m hennes", "mountain warehouse", "vivobarefoot", "bridgewater factory", "blacks outdoors", "0151 belfast upper galwally", "tjx uk watford", "primark"]
+
+- category: "department_stores"
+  matches: ["house of fraser", "castle court shopping", "marks & spencer", "m&s "]
+
+- category: "electronics"
+  matches: ["richer sounds", "currys", "www.box.co.uk", "buy it direct ltd", "trysuri.com"]
+
+- category: "online_shopping"
+  matches: ["amazon.co.uk*", "amznmktplace*", "asos.com", "vinted", "moonpig", "papier london", "end. clothing", "dsvcs.co.uk", "ssense.com", "argos", "gokula-incens"]
+
+- category: "sporting_goods"
+  matches: ["decathlon"]
+
+- category: "leisure"
+  matches: ["warren point golf club", "ulster sports club", "sustrans shop", "st john bosco"]
+
+- category: "charity"
+  matches: ["cancer research uk"]
+
+- category: "entertainment"
+  matches: ["cineworld", "sse arena belfast", "secc glasgow", "sec cloak room", "ticketmaster", "haymarket", "steamgames.com", "steam purchase", "google *google play", "google play"]
+
+- category: "nightlife"
+  matches: ["the watson", "harp bar", "bullhouse bar", "limelight", "trait ", "bridge bar", "the 78", "the shipwrights arms", "tipsy bird", "revolucion de cuba", "oml belfast", "northern lights", "35 hill street", "7-11 commercial court", "the deers head", "howlin wolf", "running horse", "babs glasgow", "margot", "four horsemen", "drip belfast", "townsquare", "fitzpatrick", "belfast hof", "ohares"]
+
+- category: "business_services"
+  matches: ["vercel", "godaddy", "sfe hosting", "etsy", "wilson nesbitt"]
+
+- category: "cash_withdrawal"
+  matches: ["bmach"]
+
+- category: "income_or_refund"
+  matches: ["mobile chq", "mortgage refund", ", refund"]
+
+- category: "salary"
+  matches: ["imanage emea limit"]
+
+- category: "memberships"
+  matches: ["prospect union"]
+
+- category: "government_fees"
+  matches: ["general register offic"]
+
+- category: "personal_care"
+  matches: ["thebodypiercingshop"]
+
+- category: "vaping"
+  matches: ["vapes", "vapour", "vpz -", "vaps", "just mist"]
+
+- category: "self_transfer"
+  matches: ["revolut**1014", "hsbc"]
+
+- category: "family_and_friends_transfer"
+  matches: ["via mobile - pymt", "via mobile xfer", "sent from revolut", "sent from monzo", "tpp revolut ltd", "tpp yapily connect", ", fp "]
+
+- category: "partner_contribution"
+  matches: ["miss deirbhile cra", "deirbhile/bae", "mrs deirbhile byrn", "tiarnan"]
+# Note: "tiarnan" alone is broad (it's your own name) - kept as a
+# last-resort catch specifically for the plain "TIARNAN" standing-order
+# label. If new data ever produces an unrelated transaction containing
+# your name that isn't this household contribution, it'll wrongly land
+# here - worth spot-checking this category occasionally rather than
+# trusting it blindly.
