@@ -1,0 +1,10 @@
+# Maps each account_id (as you chose it when running the CSV importer)
+# to its owner, so settlement.py knows who paid what. Valid owners:
+# tiarnan, deirbhile, joint.
+#
+# Fill this in with your real account IDs - these are placeholders.
+
+natwest-current-tiarnan: tiarnan
+natwest-credit-tiarnan: tiarnan
+amex-credit-tiarnan: tiarnan
+natwest-current-dee: deirbhile
