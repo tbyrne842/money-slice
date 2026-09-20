@@ -1,0 +1,51 @@
+# Default is_shared value by category, applied once by apply_sharing_defaults.py
+# to any transaction where is_shared is still undecided (None). Anything
+# already decided - by this script on a previous run, or by you manually
+# editing a transaction (e.g. via mongo-express) - is never touched again.
+#
+# Any category not listed here defaults to false (not shared).
+#
+# Note: credit_card_payment, self_transfer, salary, income_or_refund, and
+# cash_withdrawal are money-movement categories, not new spending - they're
+# deliberately false here to avoid double-counting against the actual
+# purchases that caused them (e.g. an Amex purchase AND the direct debit
+# that later pays off that balance).
+
+shared:
+  - groceries
+  - utilities
+  - household
+  - mortgage_and_loans
+  - insurance
+  - pets
+  - travel
+  - memberships
+  - government_fees
+  - subscriptions
+
+personal:
+  - dining_out
+  - transport
+  - clothing
+  - department_stores
+  - electronics
+  - online_shopping
+  - sporting_goods
+  - leisure
+  - charity
+  - entertainment
+  - nightlife
+  - personal_care
+  - books_and_media
+  - gifts_and_jewellery
+  - wedding_expenses
+  - business_services
+  - health
+  - vaping
+  - credit_card_payment
+  - self_transfer
+  - salary
+  - income_or_refund
+  - cash_withdrawal
+  - family_and_friends_transfer
+  - partner_contribution
