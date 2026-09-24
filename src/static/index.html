@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Money Slice</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <div class="brand">
+        <span class="brand-mark">£</span>
+        <div>
+          <h1>Money Slice</h1>
+          <p class="subtitle">Transaction browser</p>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="filters">
+      <div class="filters-grid">
+        <div class="field">
+          <label for="account">Account</label>
+          <select id="account"><option value="">All accounts</option></select>
+        </div>
+        <div class="field">
+          <label for="category">Category</label>
+          <select id="category"><option value="">All categories</option></select>
+        </div>
+        <div class="field">
+          <label for="shared">Shared</label>
+          <select id="shared">
+            <option value="">All</option>
+            <option value="true">Shared</option>
+            <option value="false">Personal</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="start">From</label>
+          <input type="date" id="start" />
+        </div>
+        <div class="field">
+          <label for="end">To</label>
+          <input type="date" id="end" />
+        </div>
+        <div class="field search-field">
+          <label for="search">Search</label>
+          <input type="text" id="search" placeholder="Merchant, description..." />
+        </div>
+      </div>
+      <button id="clear-filters" class="text-btn">Clear filters</button>
+    </section>
+
+    <section class="results-info">
+      <span id="results-count"></span>
+    </section>
+
+    <div class="table-wrap">
+      <table id="results-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Description</th>
+            <th>Account</th>
+            <th>Category</th>
+            <th>Shared</th>
+            <th class="amount-col">Amount</th>
+          </tr>
+        </thead>
+        <tbody id="results-body"></tbody>
+      </table>
+      <div id="empty-state" class="empty-state" hidden>No transactions match these filters.</div>
+      <div id="loading-state" class="loading-state" hidden>Loading&hellip;</div>
+    </div>
+
+    <section class="pagination">
+      <button id="prev-page">&larr; Previous</button>
+      <span id="page-info"></span>
+      <button id="next-page">Next &rarr;</button>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>
