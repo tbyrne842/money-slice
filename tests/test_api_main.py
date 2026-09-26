@@ -97,6 +97,13 @@ def test_frontend_index_is_served(client):
     assert "Money Slice" in res.text
 
 
+def test_frontend_index_includes_upload_form(client):
+    test_client, _ = client
+    res = test_client.get("/")
+    assert res.status_code == 200
+    assert 'id="upload-form"' in res.text
+
+
 # --- CSV import pipeline ------------------------------------------------
 
 def upload(client, fixture_path, mapping="generic_uk_debit_credit", account_id="test-account"):
