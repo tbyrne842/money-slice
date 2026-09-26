@@ -9,6 +9,7 @@ ingestion adapters decoupled from everything downstream
 from __future__ import annotations
 
 import hashlib
+import math
 from datetime import date, datetime
 from enum import Enum
 from typing import Optional
@@ -51,6 +52,16 @@ class Transaction(BaseModel):
     @classmethod
     def strip_description(cls, v: str) -> str:
         return " ".join(v.split())  # collapse whitespace, banks are messy
+
+    @field_validator("amount")
+    @classmethod
+    def reject_non_finite_amount(cls, v: float) -> float:
+        # NaN/inf store fine in Mongo (BSON allows it) but can't be
+        # JSON-serialised back out, so this is a fail-fast guard rather
+        # than something the API layer should ever need to work around.
+        if not math.isfinite(v):
+            raise ValueError(f"amount must be a finite number, got {v!r}")
+        return v
 
     def compute_source_hash(self) -> str:
         """

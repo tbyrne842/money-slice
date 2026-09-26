@@ -66,6 +66,16 @@ def test_source_category_defaults_to_none():
     assert txn.source_category is None
 
 
+def test_nan_amount_is_rejected():
+    with pytest.raises(ValidationError):
+        make_txn(amount=float("nan"))
+
+
+def test_infinite_amount_is_rejected():
+    with pytest.raises(ValidationError):
+        make_txn(amount=float("inf"))
+
+
 def make_account(**overrides) -> Account:
     defaults = dict(
         id="natwest-cc-tiarnan",

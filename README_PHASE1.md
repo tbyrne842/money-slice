@@ -131,9 +131,13 @@ fixture CSV + test whenever a new bank mapping is added.
       if any category default feels wrong
 - [ ] Run a real `sharing.settlement` for last month and sanity-check the
       numbers against what you'd expect
-- [ ] Chase down the recurring `"Balance as at ..."` / null-amount row
-      flagged during categorization - find which account produces it and
-      why it's slipping past the existing skip-blank-row logic
+- [x] Fixed the recurring `"Balance as at ..."` / NaN-amount row: there
+      was no skip-blank-row logic despite this being noted as if it
+      existed - `parse_csv()` now guards against it via
+      `row_has_valid_amount()`, `Transaction.amount` rejects
+      non-finite values at the model level as a fallback, and
+      `ingestion/cleanup_balance_rows.py` removes any already-imported
+      NaN rows from the database.
 
 
 uvicorn api.main:app --reload --host 0.0.0.0 --port 8000

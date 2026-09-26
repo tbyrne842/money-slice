@@ -37,6 +37,26 @@ def load_mapping(name: str) -> dict:
     return mappings[name]
 
 
+def row_has_valid_amount(row: pd.Series, mapping: dict) -> bool:
+    """
+    Guards against rows with no real amount - e.g. a bank's trailing
+    "Balance as at ..." summary row, which reuses the same column
+    layout but leaves the amount column(s) blank. Skipping these here
+    means parse_csv() never produces a NaN amount that would otherwise
+    sail straight through save_transactions() (Mongo happily stores a
+    NaN double) and only blow up later, when something tries to
+    JSON-serialise it back out.
+    """
+    if mapping["amount_mode"] == "single_signed":
+        return pd.notna(row.get(mapping["amount_col"]))
+
+    debit = row.get(mapping["debit_col"])
+    credit = row.get(mapping["credit_col"])
+    debit_present = pd.notna(debit) and str(debit).strip()
+    credit_present = pd.notna(credit) and str(credit).strip()
+    return bool(debit_present or credit_present)
+
+
 def row_to_amount(row: pd.Series, mapping: dict) -> float:
     if mapping["amount_mode"] == "single_signed":
         val = float(row[mapping["amount_col"]])
@@ -59,7 +79,12 @@ def parse_csv(file_path: str, account_id: str, mapping_name: str) -> list[Transa
     df = pd.read_csv(file_path)
 
     transactions = []
+    skipped_no_amount = 0
     for _, row in df.iterrows():
+        if not row_has_valid_amount(row, mapping):
+            skipped_no_amount += 1
+            continue
+
         txn_date = datetime.strptime(
             str(row[mapping["date_col"]]).strip(), mapping["date_format"]
         ).date()
@@ -80,6 +105,9 @@ def parse_csv(file_path: str, account_id: str, mapping_name: str) -> list[Transa
             source="csv",
         ).finalize()
         transactions.append(txn)
+
+    if skipped_no_amount:
+        print(f"Skipped {skipped_no_amount} row(s) with no amount (e.g. a trailing balance summary row).")
 
     return transactions
 

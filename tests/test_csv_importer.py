@@ -34,6 +34,16 @@ def test_natwest_parses_real_column_layout_and_date_format(fixture_path):
     assert credit.amount == 2300.00
 
 
+def test_natwest_skips_trailing_balance_summary_row(fixture_path):
+    # NatWest exports sometimes end with a "Balance as at ..." row that
+    # reuses the same columns but leaves Value blank - not a real
+    # transaction, and previously produced a NaN amount that broke
+    # JSON serialisation downstream rather than raising here.
+    txns = parse_csv(fixture_path("natwest_with_balance_row.csv"), "test-natwest", "natwest")
+    assert len(txns) == 2
+    assert all(t.description_raw != "Balance as at 25 Aug 2026" for t in txns)
+
+
 def test_monzo_single_signed_amount_used_as_is(fixture_path):
     txns = parse_csv(fixture_path("monzo.csv"), "test-monzo", "monzo")
     assert len(txns) == 2
