@@ -218,6 +218,7 @@ td.amount-col.positive {
   font-size: 0.78rem;
   font-weight: 500;
   white-space: nowrap;
+  cursor: pointer;
 }
 
 .category-chip.uncategorized {
@@ -232,6 +233,7 @@ td.amount-col.positive {
   border-radius: 999px;
   font-size: 0.75rem;
   font-weight: 500;
+  cursor: pointer;
 }
 
 .badge.shared {
@@ -242,6 +244,21 @@ td.amount-col.positive {
 .badge.personal {
   background: var(--personal);
   color: var(--text-muted);
+}
+
+.badge.undecided {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px dashed var(--border);
+}
+
+.cell-edit-select {
+  padding: 3px 6px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  background: var(--surface);
+  color: var(--text);
 }
 
 .empty-state,

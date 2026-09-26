@@ -104,6 +104,13 @@ def test_frontend_index_includes_upload_form(client):
     assert 'id="upload-form"' in res.text
 
 
+def test_frontend_index_includes_add_transaction_form(client):
+    test_client, _ = client
+    res = test_client.get("/")
+    assert res.status_code == 200
+    assert 'id="add-form"' in res.text
+
+
 def test_static_assets_are_not_cached(client):
     test_client, _ = client
     for path in ("/", "/app.js", "/style.css"):
@@ -165,3 +172,97 @@ def test_get_mappings_lists_known_mappings(client):
 
     assert response.status_code == 200
     assert "generic_uk_debit_credit" in response.json()
+
+
+# --- manual add + inline edit -------------------------------------------
+
+def test_create_transaction_runs_categorisation_and_sharing(client):
+    test_client, db = client
+    response = test_client.post(
+        "/api/transactions",
+        json={
+            "account_id": "natwest-tiarnan",
+            "date": "2026-09-01",
+            "amount": -12.50,
+            "description_raw": "TESCO STORES 123",
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    # TESCO should hit an existing category_rules.yaml rule and then get
+    # a sharing default from it - not asserting on a specific category
+    # name here since that's a config detail, just that the pipeline ran.
+    assert body["category"] is not None
+    assert body["is_shared"] is not None
+    assert db.transactions.count_documents({}) == 1
+
+
+def test_create_transaction_respects_explicit_category_and_is_shared(client):
+    test_client, db = client
+    response = test_client.post(
+        "/api/transactions",
+        json={
+            "account_id": "natwest-tiarnan",
+            "date": "2026-09-01",
+            "amount": -12.50,
+            "description_raw": "SOME UNUSUAL MERCHANT XYZ",
+            "category": "personal_care",
+            "is_shared": True,
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["category"] == "personal_care"
+    assert body["is_shared"] is True
+
+
+def test_create_transaction_duplicate_returns_409(client):
+    test_client, _ = client
+    payload = {
+        "account_id": "natwest-tiarnan",
+        "date": "2026-09-01",
+        "amount": -12.50,
+        "description_raw": "TESCO STORES 123",
+    }
+    test_client.post("/api/transactions", json=payload)
+    response = test_client.post("/api/transactions", json=payload)
+
+    assert response.status_code == 409
+
+
+def test_patch_updates_provided_fields_only(client):
+    test_client, db = client
+    result = db.transactions.insert_one(
+        {"account_id": "a", "category": "groceries", "is_shared": True, "date": "2026-09-01", "description_raw": "TESCO", "amount": -10.0}
+    )
+    transaction_id = str(result.inserted_id)
+
+    response = test_client.patch(f"/api/transactions/{transaction_id}", json={"category": "eating_out"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["category"] == "eating_out"
+    assert body["is_shared"] is True  # untouched - only category was in the payload
+
+
+def test_patch_unknown_id_returns_404(client):
+    test_client, _ = client
+    response = test_client.patch("/api/transactions/64b1f0c2e1a2b3c4d5e6f708", json={"category": "eating_out"})
+    assert response.status_code == 404
+
+
+def test_patch_invalid_id_returns_400(client):
+    test_client, _ = client
+    response = test_client.patch("/api/transactions/not-an-object-id", json={"category": "eating_out"})
+    assert response.status_code == 400
+
+
+def test_patch_no_fields_returns_400(client):
+    test_client, db = client
+    result = db.transactions.insert_one(
+        {"account_id": "a", "category": "groceries", "is_shared": True, "date": "2026-09-01", "description_raw": "TESCO", "amount": -10.0}
+    )
+    response = test_client.patch(f"/api/transactions/{result.inserted_id}", json={})
+    assert response.status_code == 400

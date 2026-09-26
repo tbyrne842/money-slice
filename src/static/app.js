@@ -28,7 +28,22 @@ const els = {
   uploadSubmit: document.getElementById("upload-submit"),
   uploadStatus: document.getElementById("upload-status"),
   uploadResult: document.getElementById("upload-result"),
+  toggleAdd: document.getElementById("toggle-add"),
+  addForm: document.getElementById("add-form"),
+  addAccount: document.getElementById("add-account"),
+  addDate: document.getElementById("add-date"),
+  addAmount: document.getElementById("add-amount"),
+  addDescription: document.getElementById("add-description"),
+  addCategory: document.getElementById("add-category"),
+  addShared: document.getElementById("add-shared"),
+  addSubmit: document.getElementById("add-submit"),
+  addStatus: document.getElementById("add-status"),
+  addResult: document.getElementById("add-result"),
 };
+
+// Cached so the inline per-row edit dropdown and the "add transaction"
+// form's category dropdown don't each need their own fetch.
+let knownCategories = [];
 
 function buildQuery() {
   const params = new URLSearchParams();
@@ -49,6 +64,8 @@ async function loadFilters() {
     fetch("/api/categories").then((r) => r.json()),
   ]);
 
+  knownCategories = categories;
+
   // Clear everything but the "All ..." default option, so this can be
   // safely re-called (e.g. after an upload adds a new account/category)
   // without duplicating entries.
@@ -66,6 +83,16 @@ async function loadFilters() {
     opt.value = cat;
     opt.textContent = cat;
     els.category.appendChild(opt);
+  }
+
+  // "Add transaction" form's category dropdown - keep the leading
+  // "Auto-categorise" option, repopulate the rest.
+  els.addCategory.length = 1;
+  for (const cat of categories) {
+    const opt = document.createElement("option");
+    opt.value = cat;
+    opt.textContent = cat;
+    els.addCategory.appendChild(opt);
   }
 }
 
@@ -100,32 +127,32 @@ function categoryColor(name) {
   };
 }
 
+function renderCategoryCell(txn) {
+  if (txn.category) {
+    const { bg, text } = categoryColor(txn.category);
+    return `<span class="category-chip" data-value="${txn.category}" style="background:${bg};color:${text}">${txn.category}</span>`;
+  }
+  return `<span class="category-chip uncategorized" data-value="">uncategorized</span>`;
+}
+
+function renderSharedCell(txn) {
+  if (txn.is_shared === true) return `<span class="badge shared" data-value="true">Shared</span>`;
+  if (txn.is_shared === false) return `<span class="badge personal" data-value="false">Personal</span>`;
+  return `<span class="badge undecided" data-value="">Undecided</span>`;
+}
+
 function renderRows(items) {
   els.body.innerHTML = "";
   for (const txn of items) {
     const tr = document.createElement("tr");
-
-    const sharedBadge =
-      txn.is_shared === true
-        ? '<span class="badge shared">Shared</span>'
-        : txn.is_shared === false
-        ? '<span class="badge personal">Personal</span>'
-        : "";
-
-    let categoryHtml;
-    if (txn.category) {
-      const { bg, text } = categoryColor(txn.category);
-      categoryHtml = `<span class="category-chip" style="background:${bg};color:${text}">${txn.category}</span>`;
-    } else {
-      categoryHtml = '<span class="category-chip uncategorized">uncategorized</span>';
-    }
+    tr.dataset.id = txn._id;
 
     tr.innerHTML = `
       <td>${txn.date ?? ""}</td>
       <td>${txn.description_raw ?? ""}</td>
       <td>${txn.account_id ?? ""}</td>
-      <td>${categoryHtml}</td>
-      <td>${sharedBadge}</td>
+      <td class="cat-cell">${renderCategoryCell(txn)}</td>
+      <td class="shared-cell">${renderSharedCell(txn)}</td>
       <td class="amount-col ${txn.amount < 0 ? "negative" : "positive"}">${formatAmount(txn.amount)}</td>
     `;
     els.body.appendChild(tr);
@@ -256,3 +283,157 @@ els.uploadForm.addEventListener("submit", async (e) => {
     els.uploadStatus.textContent = "";
   }
 });
+
+// --- inline edit: category chip + shared badge --------------------------
+
+async function patchTransaction(id, fields) {
+  try {
+    const res = await fetch(`/api/transactions/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(fields),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      alert(body.detail || "Failed to update transaction.");
+      return false;
+    }
+    return true;
+  } catch (err) {
+    alert("Couldn't reach the server.");
+    return false;
+  }
+}
+
+function editCategoryCell(tr, id, currentValue) {
+  const cell = tr.querySelector(".cat-cell");
+  const select = document.createElement("select");
+  select.className = "cell-edit-select";
+
+  const blankOpt = document.createElement("option");
+  blankOpt.value = "";
+  blankOpt.textContent = "Uncategorised";
+  select.appendChild(blankOpt);
+
+  for (const cat of knownCategories) {
+    const opt = document.createElement("option");
+    opt.value = cat;
+    opt.textContent = cat;
+    select.appendChild(opt);
+  }
+  select.value = currentValue || "";
+
+  cell.innerHTML = "";
+  cell.appendChild(select);
+  select.focus();
+
+  let committed = false;
+
+  select.addEventListener("change", async () => {
+    committed = true;
+    const newValue = select.value;
+    if (newValue === (currentValue || "")) {
+      loadTransactions();
+      return;
+    }
+    const ok = await patchTransaction(id, { category: newValue || null });
+    loadTransactions(); // re-render the chip either way - reverts on failure
+    if (!ok) return;
+  });
+
+  select.addEventListener("blur", () => {
+    // Change already handled the save case; this just cancels back to
+    // the chip if the user clicked away without picking anything new.
+    if (!committed) loadTransactions();
+  });
+}
+
+async function cycleSharedCell(tr, id, currentValue) {
+  const next = currentValue === "" ? "true" : currentValue === "true" ? "false" : "";
+  const ok = await patchTransaction(id, { is_shared: next === "" ? null : next === "true" });
+  if (ok) loadTransactions();
+}
+
+els.body.addEventListener("click", (e) => {
+  const tr = e.target.closest("tr");
+  if (!tr) return;
+  const id = tr.dataset.id;
+
+  const chip = e.target.closest(".category-chip");
+  if (chip && !tr.querySelector(".cell-edit-select")) {
+    editCategoryCell(tr, id, chip.dataset.value);
+    return;
+  }
+
+  const badge = e.target.closest(".badge");
+  if (badge) {
+    cycleSharedCell(tr, id, badge.dataset.value);
+  }
+});
+
+// --- add transaction manually --------------------------------------------
+
+els.toggleAdd.addEventListener("click", () => {
+  const showing = !els.addForm.hidden;
+  els.addForm.hidden = showing;
+  els.toggleAdd.textContent = showing ? "Show" : "Hide";
+});
+
+function renderAddResult(summary, isError) {
+  els.addResult.hidden = false;
+  els.addResult.className = `upload-result ${isError ? "error" : "success"}`;
+
+  if (isError) {
+    els.addResult.textContent = summary;
+    return;
+  }
+
+  const sharedLabel =
+    summary.is_shared === true ? "Shared" : summary.is_shared === false ? "Personal" : "Undecided";
+
+  els.addResult.innerHTML = `
+    <div>Added: ${summary.description_raw} (${formatAmount(summary.amount)})</div>
+    <div>Category: ${summary.category ?? "uncategorised"} - ${sharedLabel}</div>
+  `;
+}
+
+els.addForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+
+  els.addSubmit.disabled = true;
+  els.addStatus.textContent = "Adding\u2026";
+  els.addResult.hidden = true;
+
+  const payload = {
+    account_id: els.addAccount.value,
+    date: els.addDate.value,
+    amount: parseFloat(els.addAmount.value),
+    description_raw: els.addDescription.value,
+  };
+  if (els.addCategory.value) payload.category = els.addCategory.value;
+  if (els.addShared.value) payload.is_shared = els.addShared.value === "true";
+
+  try {
+    const res = await fetch("/api/transactions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const body = await res.json();
+
+    if (!res.ok) {
+      renderAddResult(body.detail ?? "Couldn't add the transaction.", true);
+    } else {
+      renderAddResult(body, false);
+      els.addForm.reset();
+      await loadFilters();
+      resetAndReload();
+    }
+  } catch (err) {
+    renderAddResult("Couldn't reach the server.", true);
+  } finally {
+    els.addSubmit.disabled = false;
+    els.addStatus.textContent = "";
+  }
+});
+
