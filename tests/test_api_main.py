@@ -104,6 +104,13 @@ def test_frontend_index_includes_upload_form(client):
     assert 'id="upload-form"' in res.text
 
 
+def test_static_assets_are_not_cached(client):
+    test_client, _ = client
+    for path in ("/", "/app.js", "/style.css"):
+        res = test_client.get(path)
+        assert res.headers["cache-control"] == "no-store"
+
+
 # --- CSV import pipeline ------------------------------------------------
 
 def upload(client, fixture_path, mapping="generic_uk_debit_credit", account_id="test-account"):

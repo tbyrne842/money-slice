@@ -18,6 +18,7 @@ from typing import Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
 
 import categorisation.rules as categorisation_rules
 import sharing.apply_defaults as apply_defaults_module
@@ -28,6 +29,29 @@ from ingestion.csv_importer import list_mapping_names, parse_csv, save_transacti
 app = FastAPI(title="Money Slice API")
 
 STATIC_DIR = Path(__file__).parent.parent / "static"
+
+
+class NoCacheMiddleware(BaseHTTPMiddleware):
+    """
+    Disables caching on every response.
+
+    This is a small homelab tool, not something sitting behind a CDN, so
+    there's no real cost to turning caching off outright - the
+    alternative (StaticFiles' default of no explicit Cache-Control,
+    which lets browsers apply heuristic freshness off the Last-Modified
+    header) means an ordinary reload can silently keep serving an old
+    app.js/style.css/index.html after they've been edited, requiring a
+    hard refresh to see changes. Not worth the confusion during active
+    development.
+    """
+
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+
+app.add_middleware(NoCacheMiddleware)
 
 
 @app.get("/api/health")
