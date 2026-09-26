@@ -20,6 +20,40 @@
   </header>
 
   <main>
+    <section class="upload-panel">
+      <div class="upload-panel-header">
+        <h2>Upload a statement</h2>
+        <button id="toggle-upload" class="text-btn">Show</button>
+      </div>
+      <form id="upload-form" hidden>
+        <div class="filters-grid">
+          <div class="field">
+            <label for="upload-file">CSV file</label>
+            <input type="file" id="upload-file" accept=".csv" required />
+          </div>
+          <div class="field">
+            <label for="upload-account">Account ID</label>
+            <input type="text" id="upload-account" placeholder="e.g. natwest-tiarnan" required />
+          </div>
+          <div class="field">
+            <label for="upload-mapping">Bank mapping</label>
+            <select id="upload-mapping" required>
+              <option value="" disabled selected>Loading&hellip;</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="upload-source">Source</label>
+            <input type="text" id="upload-source" value="csv" />
+          </div>
+        </div>
+        <div class="upload-actions">
+          <button type="submit" id="upload-submit">Upload</button>
+          <span id="upload-status"></span>
+        </div>
+      </form>
+      <div id="upload-result" class="upload-result" hidden></div>
+    </section>
+
     <section class="filters">
       <div class="filters-grid">
         <div class="field">

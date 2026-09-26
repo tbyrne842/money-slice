@@ -19,6 +19,15 @@ const els = {
   pageInfo: document.getElementById("page-info"),
   prevBtn: document.getElementById("prev-page"),
   nextBtn: document.getElementById("next-page"),
+  toggleUpload: document.getElementById("toggle-upload"),
+  uploadForm: document.getElementById("upload-form"),
+  uploadFile: document.getElementById("upload-file"),
+  uploadAccount: document.getElementById("upload-account"),
+  uploadMapping: document.getElementById("upload-mapping"),
+  uploadSource: document.getElementById("upload-source"),
+  uploadSubmit: document.getElementById("upload-submit"),
+  uploadStatus: document.getElementById("upload-status"),
+  uploadResult: document.getElementById("upload-result"),
 };
 
 function buildQuery() {
@@ -40,6 +49,12 @@ async function loadFilters() {
     fetch("/api/categories").then((r) => r.json()),
   ]);
 
+  // Clear everything but the "All ..." default option, so this can be
+  // safely re-called (e.g. after an upload adds a new account/category)
+  // without duplicating entries.
+  els.account.length = 1;
+  els.category.length = 1;
+
   for (const acc of accounts) {
     const opt = document.createElement("option");
     opt.value = acc;
@@ -51,6 +66,17 @@ async function loadFilters() {
     opt.value = cat;
     opt.textContent = cat;
     els.category.appendChild(opt);
+  }
+}
+
+async function loadMappings() {
+  const mappings = await fetch("/api/mappings").then((r) => r.json());
+  els.uploadMapping.innerHTML = "";
+  for (const name of mappings) {
+    const opt = document.createElement("option");
+    opt.value = name;
+    opt.textContent = name;
+    els.uploadMapping.appendChild(opt);
   }
 }
 
@@ -170,3 +196,63 @@ els.nextBtn.addEventListener("click", () => {
 });
 
 loadFilters().then(loadTransactions);
+loadMappings();
+
+els.toggleUpload.addEventListener("click", () => {
+  const showing = !els.uploadForm.hidden;
+  els.uploadForm.hidden = showing;
+  els.toggleUpload.textContent = showing ? "Show" : "Hide";
+});
+
+function renderUploadResult(summary, isError) {
+  els.uploadResult.hidden = false;
+  els.uploadResult.className = `upload-result ${isError ? "error" : "success"}`;
+
+  if (isError) {
+    els.uploadResult.textContent = summary;
+    return;
+  }
+
+  els.uploadResult.innerHTML = `
+    <div>${summary.inserted} inserted, ${summary.duplicates} duplicates skipped</div>
+    <div>${summary.categorised} categorised, ${summary.still_uncategorised} still uncategorised</div>
+  `;
+}
+
+els.uploadForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+
+  const file = els.uploadFile.files[0];
+  if (!file) return;
+
+  els.uploadSubmit.disabled = true;
+  els.uploadStatus.textContent = "Uploading\u2026";
+  els.uploadResult.hidden = true;
+
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("account_id", els.uploadAccount.value);
+  formData.append("mapping", els.uploadMapping.value);
+  formData.append("source", els.uploadSource.value || "csv");
+
+  try {
+    const res = await fetch("/api/import", { method: "POST", body: formData });
+    const body = await res.json();
+
+    if (!res.ok) {
+      renderUploadResult(body.detail ?? "Upload failed.", true);
+    } else {
+      renderUploadResult(body, false);
+      els.uploadForm.reset();
+      els.uploadSource.value = "csv";
+      await loadMappings();
+      await loadFilters();
+      resetAndReload();
+    }
+  } catch (err) {
+    renderUploadResult("Upload failed - couldn't reach the server.", true);
+  } finally {
+    els.uploadSubmit.disabled = false;
+    els.uploadStatus.textContent = "";
+  }
+});

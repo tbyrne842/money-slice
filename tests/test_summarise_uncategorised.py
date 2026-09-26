@@ -1,7 +1,7 @@
 """
 Tests for the uncategorized-merchant summary query.
 """
-from categorization.summarize_uncategorized import summarize_uncategorized
+from categorisation.summarise_uncategorised import summarize_uncategorized
 
 
 def test_groups_by_description_and_counts_correctly(mongo_db):
