@@ -84,9 +84,22 @@ def parse_csv(file_path: str, account_id: str, mapping_name: str) -> list[Transa
     return transactions
 
 
-def save_transactions(transactions: list[Transaction]) -> tuple[int, int]:
-    """Returns (inserted_count, duplicate_count)."""
-    db = get_db()
+def list_mapping_names() -> list[str]:
+    with open(MAPPINGS_PATH) as f:
+        mappings = yaml.safe_load(f)
+    return sorted(mappings.keys())
+
+
+def save_transactions(transactions: list[Transaction], db=None) -> tuple[int, int]:
+    """Returns (inserted_count, duplicate_count).
+
+    db is optional so callers that already have a handle (e.g. an API
+    endpoint running the full pipeline) can pass it through and only
+    need to patch one get_db in tests. Falls back to get_db() for the
+    CLI / existing call sites that don't pass one.
+    """
+    if db is None:
+        db = get_db()
     ensure_indexes(db)
 
     inserted, duplicates = 0, 0
@@ -108,7 +121,7 @@ def main():
     args = parser.parse_args()
 
     transactions = parse_csv(args.file, args.account_id, args.mapping)
-    inserted, duplicates = save_transactions(transactions)
+    inserted, duplicates = save_transactions(transactions, db=None)
 
     print(f"Parsed {len(transactions)} rows -> {inserted} new, {duplicates} already imported (skipped)")
 

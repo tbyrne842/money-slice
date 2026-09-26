@@ -1,8 +1,14 @@
 """
 Integration tests through the actual HTTP layer (FastAPI's TestClient),
-confirming routes are wired correctly. The filtering logic itself is
-tested more thoroughly in test_api_queries.py against the db directly -
-these tests exist to catch wiring mistakes, not to re-test every filter.
+confirming routes are wired correctly - both the read-only browser
+(filtering logic itself is tested more thoroughly in
+test_api_queries.py against the db directly; these exist to catch
+wiring mistakes) and the CSV import pipeline endpoint.
+
+Only api.main.get_db needs patching for the import tests -
+save_transactions() and categorisation.rules.run() both accept the db
+explicitly, and api.main passes the same handle through all three
+pipeline steps.
 """
 import mongomock
 import pytest
@@ -17,6 +23,8 @@ def client(monkeypatch):
     monkeypatch.setattr(api_main, "get_db", lambda: db)
     return TestClient(api_main.app), db
 
+
+# --- read-only browser -------------------------------------------------
 
 def test_health_endpoint(client):
     test_client, _ = client
@@ -87,3 +95,59 @@ def test_frontend_index_is_served(client):
     res = test_client.get("/")
     assert res.status_code == 200
     assert "Money Slice" in res.text
+
+
+# --- CSV import pipeline ------------------------------------------------
+
+def upload(client, fixture_path, mapping="generic_uk_debit_credit", account_id="test-account"):
+    with open(fixture_path, "rb") as f:
+        return client.post(
+            "/api/import",
+            files={"file": ("statement.csv", f, "text/csv")},
+            data={"account_id": account_id, "mapping": mapping, "source": "csv"},
+        )
+
+
+def test_upload_runs_full_pipeline(client, fixture_path):
+    test_client, db = client
+    response = upload(test_client, fixture_path("generic_uk_debit_credit.csv"))
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["inserted"] == 2
+    assert body["duplicates"] == 0
+    assert set(body.keys()) == {
+        "inserted",
+        "duplicates",
+        "categorised",
+        "still_uncategorised",
+        "sharing",
+    }
+    assert db.transactions.count_documents({}) == 2
+
+
+def test_reupload_is_idempotent(client, fixture_path):
+    test_client, db = client
+    upload(test_client, fixture_path("generic_uk_debit_credit.csv"))
+    response = upload(test_client, fixture_path("generic_uk_debit_credit.csv"))
+
+    body = response.json()
+    assert body["inserted"] == 0
+    assert body["duplicates"] == 2
+    assert db.transactions.count_documents({}) == 2
+
+
+def test_invalid_mapping_returns_400(client, fixture_path):
+    test_client, _ = client
+    response = upload(test_client, fixture_path("generic_uk_debit_credit.csv"), mapping="not_a_real_mapping")
+
+    assert response.status_code == 400
+    assert "not_a_real_mapping" in response.json()["detail"]
+
+
+def test_get_mappings_lists_known_mappings(client):
+    test_client, _ = client
+    response = test_client.get("/api/mappings")
+
+    assert response.status_code == 200
+    assert "generic_uk_debit_credit" in response.json()

@@ -31,8 +31,9 @@ def categorise(description: str, rules: list[dict]) -> str | None:
     return None
 
 
-def run() -> tuple[int, int]:
-    db = get_db()
+def run(db=None) -> tuple[int, int]:
+    if db is None:
+        db = get_db()
     rules = load_rules()
 
     uncategorised = db.transactions.find({"category": None})
@@ -52,5 +53,5 @@ def run() -> tuple[int, int]:
 
 
 if __name__ == "__main__":
-    matched, unmatched = run()
+    matched, unmatched = run(db=None)
     print(f"categorised {matched} transactions, {unmatched} left as 'uncategorised'")
