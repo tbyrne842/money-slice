@@ -134,3 +134,6 @@ fixture CSV + test whenever a new bank mapping is added.
 - [ ] Chase down the recurring `"Balance as at ..."` / null-amount row
       flagged during categorization - find which account produces it and
       why it's slipping past the existing skip-blank-row logic
+
+
+uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
