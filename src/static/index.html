@@ -54,6 +54,52 @@
       <div id="upload-result" class="upload-result" hidden></div>
     </section>
 
+    <section class="upload-panel">
+      <div class="upload-panel-header">
+        <h2>Add a transaction manually</h2>
+        <button id="toggle-add" class="text-btn">Show</button>
+      </div>
+      <form id="add-form" hidden>
+        <div class="filters-grid">
+          <div class="field">
+            <label for="add-account">Account ID</label>
+            <input type="text" id="add-account" placeholder="e.g. natwest-tiarnan" required />
+          </div>
+          <div class="field">
+            <label for="add-date">Date</label>
+            <input type="date" id="add-date" required />
+          </div>
+          <div class="field">
+            <label for="add-amount">Amount</label>
+            <input type="number" step="0.01" id="add-amount" placeholder="-12.50 = spend" required />
+          </div>
+          <div class="field search-field">
+            <label for="add-description">Description</label>
+            <input type="text" id="add-description" placeholder="Merchant / description" required />
+          </div>
+          <div class="field">
+            <label for="add-category">Category</label>
+            <select id="add-category">
+              <option value="">Auto-categorise</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="add-shared">Shared</label>
+            <select id="add-shared">
+              <option value="">Auto (from category default)</option>
+              <option value="true">Shared</option>
+              <option value="false">Personal</option>
+            </select>
+          </div>
+        </div>
+        <div class="upload-actions">
+          <button type="submit" id="add-submit">Add transaction</button>
+          <span id="add-status"></span>
+        </div>
+      </form>
+      <div id="add-result" class="upload-result" hidden></div>
+    </section>
+
     <section class="filters">
       <div class="filters-grid">
         <div class="field">
