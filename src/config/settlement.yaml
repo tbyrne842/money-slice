@@ -1,0 +1,8 @@
+# Tiarnan's agreed share of joint spend, e.g. 0.5 for 50/50, 0.6 for
+# Tiarnan covering 60%. Used as the default whenever a ratio isn't
+# explicitly passed to calculate_settlement() or GET /api/settlement -
+# which is the normal case for the always-visible running balance in
+# the UI. Override per-call (CLI flag or ?tiarnan_ratio= query param)
+# for a one-off "what if" calculation without changing the agreed
+# default.
+tiarnan_ratio: 0.5

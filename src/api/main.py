@@ -30,6 +30,7 @@ from api.queries import list_distinct_accounts, list_distinct_categories, query_
 from db.mongo import get_db
 from ingestion.csv_importer import list_mapping_names, parse_csv, save_transactions
 from models import Transaction
+from sharing.settlement import calculate_settlement
 
 app = FastAPI(title="Money Slice API")
 
@@ -102,6 +103,16 @@ def get_accounts():
 @app.get("/api/mappings")
 def get_mappings() -> list[str]:
     return list_mapping_names()
+
+
+@app.get("/api/settlement")
+def get_settlement(
+    start: Optional[date_type] = None,
+    end: Optional[date_type] = None,
+    tiarnan_ratio: Optional[float] = None,
+) -> dict:
+    db = get_db()
+    return calculate_settlement(db, tiarnan_ratio=tiarnan_ratio, start=start, end=end)
 
 
 @app.post("/api/import")

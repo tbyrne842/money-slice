@@ -39,6 +39,7 @@ const els = {
   addSubmit: document.getElementById("add-submit"),
   addStatus: document.getElementById("add-status"),
   addResult: document.getElementById("add-result"),
+  balanceWidget: document.getElementById("balance-widget"),
 };
 
 // Cached so the inline per-row edit dropdown and the "add transaction"
@@ -104,6 +105,38 @@ async function loadMappings() {
     opt.value = name;
     opt.textContent = name;
     els.uploadMapping.appendChild(opt);
+  }
+}
+
+async function loadBalance() {
+  try {
+    const settlement = await fetch("/api/settlement").then((r) => r.json());
+    const tiarnanBalance = settlement.balance.tiarnan;
+    const plainAmount = (n) => `\u00a3${Math.abs(n).toFixed(2)}`;
+
+    let statusClass, label, amountText;
+    if (Math.abs(tiarnanBalance) < 0.005) {
+      statusClass = "settled";
+      label = "Household balance";
+      amountText = "Settled up";
+    } else if (tiarnanBalance > 0) {
+      statusClass = "owed-to-deirbhile";
+      label = "Tiarnan owes Deirbhile";
+      amountText = plainAmount(tiarnanBalance);
+    } else {
+      statusClass = "owed-to-tiarnan";
+      label = "Deirbhile owes Tiarnan";
+      amountText = plainAmount(tiarnanBalance);
+    }
+
+    els.balanceWidget.className = `balance-widget ${statusClass}`;
+    els.balanceWidget.innerHTML = `
+      <span class="balance-label">${label}</span>
+      <span class="balance-amount">${amountText}</span>
+    `;
+  } catch (err) {
+    els.balanceWidget.className = "balance-widget settled";
+    els.balanceWidget.innerHTML = '<span class="balance-label">Balance unavailable</span>';
   }
 }
 
@@ -224,6 +257,7 @@ els.nextBtn.addEventListener("click", () => {
 
 loadFilters().then(loadTransactions);
 loadMappings();
+loadBalance();
 
 els.toggleUpload.addEventListener("click", () => {
   const showing = !els.uploadForm.hidden;
@@ -275,6 +309,7 @@ els.uploadForm.addEventListener("submit", async (e) => {
       await loadMappings();
       await loadFilters();
       resetAndReload();
+      loadBalance();
     }
   } catch (err) {
     renderUploadResult("Upload failed - couldn't reach the server.", true);
@@ -298,6 +333,10 @@ async function patchTransaction(id, fields) {
       alert(body.detail || "Failed to update transaction.");
       return false;
     }
+    // category/is_shared edits can change the settlement math - keep
+    // the always-visible balance in sync with every inline edit, not
+    // just uploads and manual adds.
+    loadBalance();
     return true;
   } catch (err) {
     alert("Couldn't reach the server.");
@@ -428,6 +467,7 @@ els.addForm.addEventListener("submit", async (e) => {
       els.addForm.reset();
       await loadFilters();
       resetAndReload();
+      loadBalance();
     }
   } catch (err) {
     renderAddResult("Couldn't reach the server.", true);

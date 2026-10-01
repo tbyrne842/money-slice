@@ -111,6 +111,13 @@ def test_frontend_index_includes_add_transaction_form(client):
     assert 'id="add-form"' in res.text
 
 
+def test_frontend_index_includes_balance_widget(client):
+    test_client, _ = client
+    res = test_client.get("/")
+    assert res.status_code == 200
+    assert 'id="balance-widget"' in res.text
+
+
 def test_static_assets_are_not_cached(client):
     test_client, _ = client
     for path in ("/", "/app.js", "/style.css"):
@@ -172,6 +179,74 @@ def test_get_mappings_lists_known_mappings(client):
 
     assert response.status_code == 200
     assert "generic_uk_debit_credit" in response.json()
+
+
+# --- settlement -----------------------------------------------------------
+
+def test_settlement_endpoint_uses_config_default_ratio(client):
+    test_client, db = client
+    db.transactions.insert_one(
+        {"account_id": "natwest-tiarnan", "amount": -200.0, "is_shared": True, "date": "2026-08-01"}
+    )
+    # account_owners.yaml maps natwest-current-tiarnan, not this test's
+    # made-up account_id, so this exercises the "unmapped" path rather
+    # than a real balance - the point here is just that the endpoint
+    # runs end-to-end and returns the expected shape.
+    response = test_client.get("/api/settlement")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert set(body.keys()) == {
+        "tiarnan_ratio",
+        "total_shared",
+        "paid_by_owner",
+        "fair_share",
+        "settled_by_owner",
+        "balance",
+        "settlement_text",
+        "unmapped_accounts",
+    }
+
+
+def test_settlement_endpoint_respects_explicit_ratio_and_date_range(client):
+    test_client, db = client
+    db.transactions.insert_many(
+        [
+            {"account_id": "natwest-current-tiarnan", "amount": -100.0, "is_shared": True, "date": "2026-07-15"},
+            {"account_id": "natwest-current-tiarnan", "amount": -100.0, "is_shared": True, "date": "2026-08-15"},
+        ]
+    )
+
+    response = test_client.get(
+        "/api/settlement",
+        params={"tiarnan_ratio": 0.6, "start": "2026-08-01", "end": "2026-08-31"},
+    )
+
+    body = response.json()
+    assert body["tiarnan_ratio"] == 0.6
+    assert body["total_shared"] == 100.0  # only the August transaction
+
+
+def test_settlement_endpoint_reflects_settle_up_payment(client):
+    test_client, db = client
+    db.transactions.insert_many(
+        [
+            {"account_id": "natwest-current-dee", "amount": -200.0, "is_shared": True, "date": "2026-08-01"},
+            {
+                "account_id": "natwest-current-tiarnan",
+                "amount": -100.0,
+                "is_shared": False,
+                "category": "partner_contribution",
+                "date": "2026-08-05",
+            },
+        ]
+    )
+
+    response = test_client.get("/api/settlement")
+    body = response.json()
+    assert body["settled_by_owner"]["tiarnan"] == 100.0
+    assert body["balance"]["tiarnan"] == 0.0
+    assert body["settlement_text"] == "Already settled - nothing owed either way"
 
 
 # --- manual add + inline edit -------------------------------------------
