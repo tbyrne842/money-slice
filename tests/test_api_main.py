@@ -127,12 +127,12 @@ def test_static_assets_are_not_cached(client):
 
 # --- CSV import pipeline ------------------------------------------------
 
-def upload(client, fixture_path, mapping="generic_uk_debit_credit", account_id="test-account"):
+def upload(client, fixture_path, mapping="generic_uk_debit_credit", owner="tiarnan"):
     with open(fixture_path, "rb") as f:
         return client.post(
             "/api/import",
             files={"file": ("statement.csv", f, "text/csv")},
-            data={"account_id": account_id, "mapping": mapping, "source": "csv"},
+            data={"owner": owner, "mapping": mapping, "source": "csv"},
         )
 
 
@@ -186,12 +186,8 @@ def test_get_mappings_lists_known_mappings(client):
 def test_settlement_endpoint_uses_config_default_ratio(client):
     test_client, db = client
     db.transactions.insert_one(
-        {"account_id": "natwest-tiarnan", "amount": -200.0, "is_shared": True, "date": "2026-08-01"}
+        {"owner": "tiarnan", "amount": -200.0, "is_shared": True, "date": "2026-08-01"}
     )
-    # account_owners.yaml maps natwest-current-tiarnan, not this test's
-    # made-up account_id, so this exercises the "unmapped" path rather
-    # than a real balance - the point here is just that the endpoint
-    # runs end-to-end and returns the expected shape.
     response = test_client.get("/api/settlement")
 
     assert response.status_code == 200
@@ -204,7 +200,6 @@ def test_settlement_endpoint_uses_config_default_ratio(client):
         "settled_by_owner",
         "balance",
         "settlement_text",
-        "unmapped_accounts",
     }
 
 
@@ -212,8 +207,8 @@ def test_settlement_endpoint_respects_explicit_ratio_and_date_range(client):
     test_client, db = client
     db.transactions.insert_many(
         [
-            {"account_id": "natwest-current-tiarnan", "amount": -100.0, "is_shared": True, "date": "2026-07-15"},
-            {"account_id": "natwest-current-tiarnan", "amount": -100.0, "is_shared": True, "date": "2026-08-15"},
+            {"owner": "tiarnan", "amount": -100.0, "is_shared": True, "date": "2026-07-15"},
+            {"owner": "tiarnan", "amount": -100.0, "is_shared": True, "date": "2026-08-15"},
         ]
     )
 
@@ -231,9 +226,9 @@ def test_settlement_endpoint_reflects_settle_up_payment(client):
     test_client, db = client
     db.transactions.insert_many(
         [
-            {"account_id": "natwest-current-dee", "amount": -200.0, "is_shared": True, "date": "2026-08-01"},
+            {"owner": "deirbhile", "amount": -200.0, "is_shared": True, "date": "2026-08-01"},
             {
-                "account_id": "natwest-current-tiarnan",
+                "owner": "tiarnan",
                 "amount": -100.0,
                 "is_shared": False,
                 "category": "partner_contribution",
@@ -256,7 +251,7 @@ def test_create_transaction_runs_categorisation_and_sharing(client):
     response = test_client.post(
         "/api/transactions",
         json={
-            "account_id": "natwest-tiarnan",
+            "owner": "tiarnan",
             "date": "2026-09-01",
             "amount": -12.50,
             "description_raw": "TESCO STORES 123",
@@ -278,7 +273,7 @@ def test_create_transaction_respects_explicit_category_and_is_shared(client):
     response = test_client.post(
         "/api/transactions",
         json={
-            "account_id": "natwest-tiarnan",
+            "owner": "tiarnan",
             "date": "2026-09-01",
             "amount": -12.50,
             "description_raw": "SOME UNUSUAL MERCHANT XYZ",
@@ -296,7 +291,7 @@ def test_create_transaction_respects_explicit_category_and_is_shared(client):
 def test_create_transaction_duplicate_returns_409(client):
     test_client, _ = client
     payload = {
-        "account_id": "natwest-tiarnan",
+        "owner": "tiarnan",
         "date": "2026-09-01",
         "amount": -12.50,
         "description_raw": "TESCO STORES 123",

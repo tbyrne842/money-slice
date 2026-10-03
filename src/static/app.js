@@ -292,7 +292,7 @@ els.uploadForm.addEventListener("submit", async (e) => {
 
   const formData = new FormData();
   formData.append("file", file);
-  formData.append("account_id", els.uploadAccount.value);
+  formData.append("owner", els.uploadAccount.value);
   formData.append("mapping", els.uploadMapping.value);
   formData.append("source", els.uploadSource.value || "csv");
 
@@ -444,7 +444,7 @@ els.addForm.addEventListener("submit", async (e) => {
   els.addResult.hidden = true;
 
   const payload = {
-    account_id: els.addAccount.value,
+    owner: els.addAccount.value,
     date: els.addDate.value,
     amount: parseFloat(els.addAmount.value),
     description_raw: els.addDescription.value,

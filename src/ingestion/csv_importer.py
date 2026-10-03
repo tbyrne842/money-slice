@@ -5,6 +5,7 @@ Usage:
     python -m ingestion.csv_importer \
         --file statements/danske_july.csv \
         --account-id danske-current-tiarnan \
+        --owner tiarnan \
         --mapping generic_uk_debit_credit
 
 Adding a new bank format = adding a block to bank_mappings.yaml.
@@ -74,7 +75,7 @@ def row_to_amount(row: pd.Series, mapping: dict) -> float:
     return 0.0
 
 
-def parse_csv(file_path: str, account_id: str, mapping_name: str) -> list[Transaction]:
+def parse_csv(file_path: str, account_id: str, mapping_name: str, owner: str | None = None) -> list[Transaction]:
     mapping = load_mapping(mapping_name)
     df = pd.read_csv(file_path)
 
@@ -98,6 +99,7 @@ def parse_csv(file_path: str, account_id: str, mapping_name: str) -> list[Transa
 
         txn = Transaction(
             account_id=account_id,
+            owner=owner,
             date=txn_date,
             amount=amount,
             description_raw=description,
@@ -145,10 +147,11 @@ def main():
     parser = argparse.ArgumentParser(description="Import a bank CSV export into MongoDB")
     parser.add_argument("--file", required=True, help="Path to CSV file")
     parser.add_argument("--account-id", required=True, help="Account id, e.g. danske-current-tiarnan")
+    parser.add_argument("--owner", required=True, choices=["tiarnan", "deirbhile"], help="Whose statement this is")
     parser.add_argument("--mapping", required=True, help="Mapping name from bank_mappings.yaml")
     args = parser.parse_args()
 
-    transactions = parse_csv(args.file, args.account_id, args.mapping)
+    transactions = parse_csv(args.file, args.account_id, args.mapping, owner=args.owner)
     inserted, duplicates = save_transactions(transactions, db=None)
 
     print(f"Parsed {len(transactions)} rows -> {inserted} new, {duplicates} already imported (skipped)")

@@ -26,13 +26,7 @@ import yaml
 
 from db.mongo import get_db
 
-OWNERS_PATH = Path(__file__).parent.parent / "config" / "account_owners.yaml"
 SETTLEMENT_CONFIG_PATH = Path(__file__).parent.parent / "config" / "settlement.yaml"
-
-
-def load_account_owners() -> dict[str, str]:
-    with open(OWNERS_PATH) as f:
-        return yaml.safe_load(f) or {}
 
 
 def load_default_tiarnan_ratio() -> float:
@@ -57,10 +51,7 @@ def calculate_settlement(
     tiarnan_ratio: float | None = None,
     start: date | None = None,
     end: date | None = None,
-    account_owners: dict[str, str] | None = None,
 ) -> dict:
-    if account_owners is None:
-        account_owners = load_account_owners()
     if tiarnan_ratio is None:
         tiarnan_ratio = load_default_tiarnan_ratio()
 
@@ -78,19 +69,17 @@ def calculate_settlement(
     if date_filter:
         spend_query["date"] = date_filter
 
-    paid_by_owner: dict[str, float] = {"tiarnan": 0.0, "deirbhile": 0.0, "joint": 0.0}
-    unmapped_accounts: set[str] = set()
+    paid_by_owner: dict[str, float] = {"tiarnan": 0.0, "deirbhile": 0.0}
 
     for txn in db.transactions.find(spend_query):
         if txn["amount"] >= 0:
             continue  # only outgoing spend counts as a shared cost
 
-        owner = account_owners.get(txn["account_id"])
-        if owner is None:
-            unmapped_accounts.add(txn["account_id"])
-            continue
+        owner = txn.get("owner")
+        if owner not in paid_by_owner:
+            continue  # no owner recorded (legacy row) - re-upload to attribute it
 
-        paid_by_owner[owner] = paid_by_owner.get(owner, 0.0) + abs(txn["amount"])
+        paid_by_owner[owner] += abs(txn["amount"])
 
     total_shared = sum(paid_by_owner.values())
     fair_share = {
@@ -123,11 +112,9 @@ def calculate_settlement(
         if txn["amount"] >= 0:
             continue  # the mirrored incoming leg, if present - ignore it
 
-        owner = account_owners.get(txn["account_id"])
-        if owner not in ("tiarnan", "deirbhile"):
-            if owner is None:
-                unmapped_accounts.add(txn["account_id"])
-            continue  # a joint account paying itself makes no sense here
+        owner = txn.get("owner")
+        if owner not in settled_by_owner:
+            continue
 
         settled_by_owner[owner] += abs(txn["amount"])
 
@@ -154,7 +141,6 @@ def calculate_settlement(
         "settled_by_owner": {k: round(v, 2) for k, v in settled_by_owner.items()},
         "balance": {k: round(v, 2) for k, v in balance.items()},
         "settlement_text": settlement_text,
-        "unmapped_accounts": sorted(unmapped_accounts),
     }
 
 
@@ -190,14 +176,6 @@ def main():
         f"Settle-up payments already sent - Tiarnan: £{result['settled_by_owner']['tiarnan']}, Deirbhile: £{result['settled_by_owner']['deirbhile']}"
     )
     print(f"\n{result['settlement_text']}")
-
-    if result["unmapped_accounts"]:
-        print(
-            "\nWarning: these accounts had shared or settle-up transactions but no owner "
-            "mapping in account_owners.yaml, so were excluded:"
-        )
-        for acc in result["unmapped_accounts"]:
-            print(f"  {acc}")
 
 
 if __name__ == "__main__":

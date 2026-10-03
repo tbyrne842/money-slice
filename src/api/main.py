@@ -15,7 +15,7 @@ Then open http://localhost:8000
 import tempfile
 from datetime import date as date_type
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 from bson import ObjectId
 from bson.errors import InvalidId
@@ -118,7 +118,7 @@ def get_settlement(
 @app.post("/api/import")
 async def import_csv(
     file: UploadFile = File(...),
-    account_id: str = Form(...),
+    owner: Literal["tiarnan", "deirbhile"] = Form(...),
     mapping: str = Form(...),
     source: str = Form("csv"),
 ) -> dict:
@@ -127,7 +127,7 @@ async def import_csv(
         tmp_path = tmp.name
 
     try:
-        transactions = parse_csv(tmp_path, account_id, mapping)
+        transactions = parse_csv(tmp_path, owner, mapping, owner=owner)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     finally:
@@ -151,7 +151,7 @@ async def import_csv(
 
 
 class ManualTransactionIn(BaseModel):
-    account_id: str
+    owner: Literal["tiarnan", "deirbhile"]
     date: date_type
     amount: float
     description_raw: str
@@ -167,7 +167,8 @@ class TransactionPatch(BaseModel):
 @app.post("/api/transactions", status_code=201)
 def create_transaction(payload: ManualTransactionIn) -> dict:
     txn = Transaction(
-        account_id=payload.account_id,
+        account_id=payload.owner,
+        owner=payload.owner,
         date=payload.date,
         amount=payload.amount,
         description_raw=payload.description_raw,
