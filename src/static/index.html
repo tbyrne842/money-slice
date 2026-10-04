@@ -16,6 +16,9 @@
           <p class="subtitle">Transaction browser</p>
         </div>
       </div>
+      <div id="balance-widget" class="balance-widget">
+        <span class="balance-label">Loading balance&hellip;</span>
+      </div>
     </div>
   </header>
 
@@ -32,8 +35,8 @@
             <input type="file" id="upload-file" accept=".csv" required />
           </div>
           <div class="field">
-            <label for="upload-account">Account ID</label>
-            <input type="text" id="upload-account" placeholder="e.g. natwest-tiarnan" required />
+            <label for="upload-account">Whose account?</label>
+            <select id="upload-account" required><option value="">Choose…</option><option value="tiarnan">Tiarnan</option><option value="deirbhile">Deirbhile</option></select>
           </div>
           <div class="field">
             <label for="upload-mapping">Bank mapping</label>
@@ -62,8 +65,8 @@
       <form id="add-form" hidden>
         <div class="filters-grid">
           <div class="field">
-            <label for="add-account">Account ID</label>
-            <input type="text" id="add-account" placeholder="e.g. natwest-tiarnan" required />
+            <label for="add-account">Whose account?</label>
+            <select id="add-account" required><option value="">Choose…</option><option value="tiarnan">Tiarnan</option><option value="deirbhile">Deirbhile</option></select>
           </div>
           <div class="field">
             <label for="add-date">Date</label>

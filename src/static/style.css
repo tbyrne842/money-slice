@@ -27,12 +27,20 @@ body {
 header {
   background: var(--surface);
   border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
 
 .header-inner {
   max-width: 1100px;
   margin: 0 auto;
   padding: 20px 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
 }
 
 .brand {
@@ -259,6 +267,40 @@ td.amount-col.positive {
   font-size: 0.8rem;
   background: var(--surface);
   color: var(--text);
+}
+
+.balance-widget {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  padding: 8px 16px;
+  border-radius: 10px;
+  font-size: 0.9rem;
+}
+
+.balance-widget.owed-to-tiarnan,
+.balance-widget.owed-to-deirbhile {
+  background: var(--shared);
+}
+
+.balance-widget.owed-to-tiarnan .balance-amount,
+.balance-widget.owed-to-deirbhile .balance-amount {
+  color: var(--shared-text);
+}
+
+.balance-widget.settled {
+  background: var(--personal);
+}
+
+.balance-widget .balance-label {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.balance-widget .balance-amount {
+  font-size: 1.05rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .empty-state,

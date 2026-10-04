@@ -111,6 +111,13 @@ def test_frontend_index_includes_add_transaction_form(client):
     assert 'id="add-form"' in res.text
 
 
+def test_frontend_index_includes_balance_widget(client):
+    test_client, _ = client
+    res = test_client.get("/")
+    assert res.status_code == 200
+    assert 'id="balance-widget"' in res.text
+
+
 def test_static_assets_are_not_cached(client):
     test_client, _ = client
     for path in ("/", "/app.js", "/style.css"):
@@ -120,12 +127,12 @@ def test_static_assets_are_not_cached(client):
 
 # --- CSV import pipeline ------------------------------------------------
 
-def upload(client, fixture_path, mapping="generic_uk_debit_credit", account_id="test-account"):
+def upload(client, fixture_path, mapping="generic_uk_debit_credit", owner="tiarnan"):
     with open(fixture_path, "rb") as f:
         return client.post(
             "/api/import",
             files={"file": ("statement.csv", f, "text/csv")},
-            data={"account_id": account_id, "mapping": mapping, "source": "csv"},
+            data={"owner": owner, "mapping": mapping, "source": "csv"},
         )
 
 
@@ -174,6 +181,69 @@ def test_get_mappings_lists_known_mappings(client):
     assert "generic_uk_debit_credit" in response.json()
 
 
+# --- settlement -----------------------------------------------------------
+
+def test_settlement_endpoint_uses_config_default_ratio(client):
+    test_client, db = client
+    db.transactions.insert_one(
+        {"owner": "tiarnan", "amount": -200.0, "is_shared": True, "date": "2026-08-01"}
+    )
+    response = test_client.get("/api/settlement")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert set(body.keys()) == {
+        "tiarnan_ratio",
+        "total_shared",
+        "paid_by_owner",
+        "fair_share",
+        "settled_by_owner",
+        "balance",
+        "settlement_text",
+    }
+
+
+def test_settlement_endpoint_respects_explicit_ratio_and_date_range(client):
+    test_client, db = client
+    db.transactions.insert_many(
+        [
+            {"owner": "tiarnan", "amount": -100.0, "is_shared": True, "date": "2026-07-15"},
+            {"owner": "tiarnan", "amount": -100.0, "is_shared": True, "date": "2026-08-15"},
+        ]
+    )
+
+    response = test_client.get(
+        "/api/settlement",
+        params={"tiarnan_ratio": 0.6, "start": "2026-08-01", "end": "2026-08-31"},
+    )
+
+    body = response.json()
+    assert body["tiarnan_ratio"] == 0.6
+    assert body["total_shared"] == 100.0  # only the August transaction
+
+
+def test_settlement_endpoint_reflects_settle_up_payment(client):
+    test_client, db = client
+    db.transactions.insert_many(
+        [
+            {"owner": "deirbhile", "amount": -200.0, "is_shared": True, "date": "2026-08-01"},
+            {
+                "owner": "tiarnan",
+                "amount": -100.0,
+                "is_shared": False,
+                "category": "partner_contribution",
+                "date": "2026-08-05",
+            },
+        ]
+    )
+
+    response = test_client.get("/api/settlement")
+    body = response.json()
+    assert body["settled_by_owner"]["tiarnan"] == 100.0
+    assert body["balance"]["tiarnan"] == 0.0
+    assert body["settlement_text"] == "Already settled - nothing owed either way"
+
+
 # --- manual add + inline edit -------------------------------------------
 
 def test_create_transaction_runs_categorisation_and_sharing(client):
@@ -181,7 +251,7 @@ def test_create_transaction_runs_categorisation_and_sharing(client):
     response = test_client.post(
         "/api/transactions",
         json={
-            "account_id": "natwest-tiarnan",
+            "owner": "tiarnan",
             "date": "2026-09-01",
             "amount": -12.50,
             "description_raw": "TESCO STORES 123",
@@ -203,7 +273,7 @@ def test_create_transaction_respects_explicit_category_and_is_shared(client):
     response = test_client.post(
         "/api/transactions",
         json={
-            "account_id": "natwest-tiarnan",
+            "owner": "tiarnan",
             "date": "2026-09-01",
             "amount": -12.50,
             "description_raw": "SOME UNUSUAL MERCHANT XYZ",
@@ -221,7 +291,7 @@ def test_create_transaction_respects_explicit_category_and_is_shared(client):
 def test_create_transaction_duplicate_returns_409(client):
     test_client, _ = client
     payload = {
-        "account_id": "natwest-tiarnan",
+        "owner": "tiarnan",
         "date": "2026-09-01",
         "amount": -12.50,
         "description_raw": "TESCO STORES 123",
