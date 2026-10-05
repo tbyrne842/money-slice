@@ -21,7 +21,12 @@ import api.main as api_main
 def client(monkeypatch):
     db = mongomock.MongoClient()["finance_tracker_test"]
     monkeypatch.setattr(api_main, "get_db", lambda: db)
-    return TestClient(api_main.app), db
+    test_client = TestClient(api_main.app)
+    # Everything except /api/health needs a session, so sign in as tiarnan
+    # (the settlement endpoint's fixed two-person owners are tiarnan/deirbhile).
+    res = test_client.post("/api/auth/register", json={"username": "tiarnan", "password": "correct horse battery"})
+    assert res.status_code == 201
+    return test_client, db
 
 
 # --- read-only browser -------------------------------------------------
@@ -36,7 +41,7 @@ def test_health_endpoint(client):
 def test_transactions_endpoint_returns_seeded_data(client):
     test_client, db = client
     db.transactions.insert_one(
-        {"account_id": "a", "category": "groceries", "is_shared": True, "date": "2026-08-01", "description_raw": "TESCO", "amount": -10.0}
+        {"owner": "tiarnan", "account_id": "a", "category": "groceries", "is_shared": True, "date": "2026-08-01", "description_raw": "TESCO", "amount": -10.0}
     )
 
     res = test_client.get("/api/transactions")
@@ -50,8 +55,8 @@ def test_transactions_endpoint_applies_query_filters(client):
     test_client, db = client
     db.transactions.insert_many(
         [
-            {"account_id": "a", "category": "groceries", "is_shared": True, "date": "2026-08-01", "description_raw": "TESCO", "amount": -10.0},
-            {"account_id": "a", "category": "clothing", "is_shared": False, "date": "2026-08-01", "description_raw": "ZARA", "amount": -20.0},
+            {"owner": "tiarnan", "account_id": "a", "category": "groceries", "is_shared": True, "date": "2026-08-01", "description_raw": "TESCO", "amount": -10.0},
+            {"owner": "tiarnan", "account_id": "a", "category": "clothing", "is_shared": False, "date": "2026-08-01", "description_raw": "ZARA", "amount": -20.0},
         ]
     )
 
@@ -71,8 +76,8 @@ def test_categories_endpoint(client):
     test_client, db = client
     db.transactions.insert_many(
         [
-            {"account_id": "a", "category": "groceries", "description_raw": "x", "amount": -1, "date": "2026-08-01", "is_shared": None},
-            {"account_id": "a", "category": "clothing", "description_raw": "y", "amount": -1, "date": "2026-08-01", "is_shared": None},
+            {"owner": "tiarnan", "account_id": "a", "category": "groceries", "description_raw": "x", "amount": -1, "date": "2026-08-01", "is_shared": None},
+            {"owner": "tiarnan", "account_id": "a", "category": "clothing", "description_raw": "y", "amount": -1, "date": "2026-08-01", "is_shared": None},
         ]
     )
 
@@ -83,7 +88,7 @@ def test_categories_endpoint(client):
 def test_accounts_endpoint(client):
     test_client, db = client
     db.transactions.insert_one(
-        {"account_id": "natwest-tiarnan", "category": None, "description_raw": "x", "amount": -1, "date": "2026-08-01", "is_shared": None}
+        {"owner": "tiarnan", "account_id": "natwest-tiarnan", "category": None, "description_raw": "x", "amount": -1, "date": "2026-08-01", "is_shared": None}
     )
 
     res = test_client.get("/api/accounts")
@@ -127,12 +132,12 @@ def test_static_assets_are_not_cached(client):
 
 # --- CSV import pipeline ------------------------------------------------
 
-def upload(client, fixture_path, mapping="generic_uk_debit_credit", owner="tiarnan"):
+def upload(client, fixture_path, mapping="generic_uk_debit_credit"):
     with open(fixture_path, "rb") as f:
         return client.post(
             "/api/import",
             files={"file": ("statement.csv", f, "text/csv")},
-            data={"owner": owner, "mapping": mapping, "source": "csv"},
+            data={"mapping": mapping, "source": "csv"},
         )
 
 
@@ -251,7 +256,6 @@ def test_create_transaction_runs_categorisation_and_sharing(client):
     response = test_client.post(
         "/api/transactions",
         json={
-            "owner": "tiarnan",
             "date": "2026-09-01",
             "amount": -12.50,
             "description_raw": "TESCO STORES 123",
@@ -273,7 +277,6 @@ def test_create_transaction_respects_explicit_category_and_is_shared(client):
     response = test_client.post(
         "/api/transactions",
         json={
-            "owner": "tiarnan",
             "date": "2026-09-01",
             "amount": -12.50,
             "description_raw": "SOME UNUSUAL MERCHANT XYZ",
@@ -291,7 +294,6 @@ def test_create_transaction_respects_explicit_category_and_is_shared(client):
 def test_create_transaction_duplicate_returns_409(client):
     test_client, _ = client
     payload = {
-        "owner": "tiarnan",
         "date": "2026-09-01",
         "amount": -12.50,
         "description_raw": "TESCO STORES 123",
@@ -305,7 +307,7 @@ def test_create_transaction_duplicate_returns_409(client):
 def test_patch_updates_provided_fields_only(client):
     test_client, db = client
     result = db.transactions.insert_one(
-        {"account_id": "a", "category": "groceries", "is_shared": True, "date": "2026-09-01", "description_raw": "TESCO", "amount": -10.0}
+        {"owner": "tiarnan", "account_id": "a", "category": "groceries", "is_shared": True, "date": "2026-09-01", "description_raw": "TESCO", "amount": -10.0}
     )
     transaction_id = str(result.inserted_id)
 
@@ -332,7 +334,7 @@ def test_patch_invalid_id_returns_400(client):
 def test_patch_no_fields_returns_400(client):
     test_client, db = client
     result = db.transactions.insert_one(
-        {"account_id": "a", "category": "groceries", "is_shared": True, "date": "2026-09-01", "description_raw": "TESCO", "amount": -10.0}
+        {"owner": "tiarnan", "account_id": "a", "category": "groceries", "is_shared": True, "date": "2026-09-01", "description_raw": "TESCO", "amount": -10.0}
     )
     response = test_client.patch(f"/api/transactions/{result.inserted_id}", json={})
     assert response.status_code == 400

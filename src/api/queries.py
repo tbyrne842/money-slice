@@ -10,6 +10,7 @@ from typing import Optional
 def query_transactions(
     db,
     *,
+    owner: str,
     account_id: Optional[str] = None,
     category: Optional[str] = None,
     is_shared: Optional[bool] = None,
@@ -19,7 +20,7 @@ def query_transactions(
     skip: int = 0,
     limit: int = 50,
 ) -> dict:
-    query: dict = {}
+    query: dict = {"owner": owner}
     if account_id:
         query["account_id"] = account_id
     if category:
@@ -47,9 +48,9 @@ def query_transactions(
     return {"items": items, "total": total, "skip": skip, "limit": limit}
 
 
-def list_distinct_categories(db) -> list[str]:
-    return sorted(c for c in db.transactions.distinct("category") if c)
+def list_distinct_categories(db, owner: str) -> list[str]:
+    return sorted(c for c in db.transactions.distinct("category", {"owner": owner}) if c)
 
 
-def list_distinct_accounts(db) -> list[str]:
-    return sorted(db.transactions.distinct("account_id"))
+def list_distinct_accounts(db, owner: str) -> list[str]:
+    return sorted(db.transactions.distinct("account_id", {"owner": owner}))

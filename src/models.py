@@ -35,7 +35,7 @@ class Account(BaseModel):
 class Transaction(BaseModel):
     id: Optional[str] = None  # set to source_hash on save
     account_id: str
-    owner: Optional[Literal["tiarnan", "deirbhile"]] = None  # who paid; required by the import/manual-add entry points
+    owner: Optional[str] = None  # username of whoever paid; always set by the import/manual-add entry points
     date: date
     amount: float  # negative = money out, positive = money in
     currency: str = "GBP"

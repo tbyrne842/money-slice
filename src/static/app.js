@@ -22,7 +22,6 @@ const els = {
   toggleUpload: document.getElementById("toggle-upload"),
   uploadForm: document.getElementById("upload-form"),
   uploadFile: document.getElementById("upload-file"),
-  uploadAccount: document.getElementById("upload-account"),
   uploadMapping: document.getElementById("upload-mapping"),
   uploadSource: document.getElementById("upload-source"),
   uploadSubmit: document.getElementById("upload-submit"),
@@ -30,7 +29,6 @@ const els = {
   uploadResult: document.getElementById("upload-result"),
   toggleAdd: document.getElementById("toggle-add"),
   addForm: document.getElementById("add-form"),
-  addAccount: document.getElementById("add-account"),
   addDate: document.getElementById("add-date"),
   addAmount: document.getElementById("add-amount"),
   addDescription: document.getElementById("add-description"),
@@ -255,9 +253,95 @@ els.nextBtn.addEventListener("click", () => {
   loadTransactions();
 });
 
-loadFilters().then(loadTransactions);
-loadMappings();
-loadBalance();
+// --- sign-in -----------------------------------------------------------
+
+const authEls = {
+  overlay: document.getElementById("auth-overlay"),
+  form: document.getElementById("auth-form"),
+  title: document.getElementById("auth-title"),
+  username: document.getElementById("auth-username"),
+  password: document.getElementById("auth-password"),
+  error: document.getElementById("auth-error"),
+  submit: document.getElementById("auth-submit"),
+  toggle: document.getElementById("auth-toggle"),
+  userMenu: document.getElementById("user-menu"),
+  userName: document.getElementById("user-name"),
+  logout: document.getElementById("logout-btn"),
+};
+
+let registering = false;
+
+function showLogin() {
+  authEls.overlay.hidden = false;
+}
+
+function setAuthMode(isRegister) {
+  registering = isRegister;
+  authEls.title.textContent = isRegister ? "Create an account" : "Sign in";
+  authEls.submit.textContent = isRegister ? "Create account" : "Sign in";
+  authEls.toggle.textContent = isRegister ? "I already have an account" : "Create an account";
+  authEls.password.autocomplete = isRegister ? "new-password" : "current-password";
+  authEls.error.hidden = true;
+}
+
+authEls.toggle.addEventListener("click", () => setAuthMode(!registering));
+
+authEls.form.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  authEls.submit.disabled = true;
+  authEls.error.hidden = true;
+  try {
+    const res = await fetch(registering ? "/api/auth/register" : "/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: authEls.username.value,
+        password: authEls.password.value,
+      }),
+    });
+    if (res.ok) {
+      location.reload(); // simplest way to guarantee no stale data from before sign-in
+      return;
+    }
+    const body = await res.json().catch(() => ({}));
+    authEls.error.textContent = body.detail ?? "Couldn't sign in.";
+    authEls.error.hidden = false;
+  } catch (err) {
+    authEls.error.textContent = "Couldn't reach the server.";
+    authEls.error.hidden = false;
+  } finally {
+    authEls.submit.disabled = false;
+  }
+});
+
+authEls.logout.addEventListener("click", async () => {
+  await fetch("/api/auth/logout", { method: "POST" });
+  location.reload();
+});
+
+// An expired session mid-use shows the sign-in screen instead of failing silently.
+const rawFetch = window.fetch.bind(window);
+window.fetch = async (input, init) => {
+  const res = await rawFetch(input, init);
+  if (res.status === 401 && !String(input).startsWith("/api/auth/")) showLogin();
+  return res;
+};
+
+async function startApp() {
+  const res = await fetch("/api/auth/me");
+  if (!res.ok) {
+    showLogin();
+    return;
+  }
+  const { username } = await res.json();
+  authEls.userName.textContent = username;
+  authEls.userMenu.hidden = false;
+  loadFilters().then(loadTransactions);
+  loadMappings();
+  loadBalance();
+}
+
+startApp();
 
 els.toggleUpload.addEventListener("click", () => {
   const showing = !els.uploadForm.hidden;
@@ -292,7 +376,6 @@ els.uploadForm.addEventListener("submit", async (e) => {
 
   const formData = new FormData();
   formData.append("file", file);
-  formData.append("owner", els.uploadAccount.value);
   formData.append("mapping", els.uploadMapping.value);
   formData.append("source", els.uploadSource.value || "csv");
 
@@ -444,7 +527,6 @@ els.addForm.addEventListener("submit", async (e) => {
   els.addResult.hidden = true;
 
   const payload = {
-    owner: els.addAccount.value,
     date: els.addDate.value,
     amount: parseFloat(els.addAmount.value),
     description_raw: els.addDescription.value,

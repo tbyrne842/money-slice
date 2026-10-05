@@ -147,7 +147,7 @@ def main():
     parser = argparse.ArgumentParser(description="Import a bank CSV export into MongoDB")
     parser.add_argument("--file", required=True, help="Path to CSV file")
     parser.add_argument("--account-id", required=True, help="Account id, e.g. danske-current-tiarnan")
-    parser.add_argument("--owner", required=True, choices=["tiarnan", "deirbhile"], help="Whose statement this is")
+    parser.add_argument("--owner", required=True, help="Username that owns this statement")
     parser.add_argument("--mapping", required=True, help="Mapping name from bank_mappings.yaml")
     args = parser.parse_args()
 
