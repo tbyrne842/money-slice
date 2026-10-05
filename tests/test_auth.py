@@ -23,7 +23,7 @@ def new_client(username=None, password=PASSWORD):
     return client
 
 
-PROTECTED_GETS = ["/api/transactions", "/api/categories", "/api/accounts", "/api/mappings", "/api/settlement", "/api/auth/me"]
+PROTECTED_GETS = ["/api/transactions", "/api/categories", "/api/accounts", "/api/mappings", "/api/settlement", "/api/auth/me", "/api/households/me"]
 
 
 @pytest.mark.parametrize("path", PROTECTED_GETS)
