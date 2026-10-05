@@ -7,6 +7,23 @@
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
+  <div id="auth-overlay" class="auth-overlay" hidden>
+    <form id="auth-form" class="auth-card">
+      <h2 id="auth-title">Sign in</h2>
+      <div class="field">
+        <label for="auth-username">Username</label>
+        <input type="text" id="auth-username" autocomplete="username" required />
+      </div>
+      <div class="field">
+        <label for="auth-password">Password</label>
+        <input type="password" id="auth-password" autocomplete="current-password" required />
+      </div>
+      <p id="auth-error" class="auth-error" hidden></p>
+      <button type="submit" id="auth-submit">Sign in</button>
+      <button type="button" id="auth-toggle" class="text-btn">Create an account</button>
+    </form>
+  </div>
+
   <header>
     <div class="header-inner">
       <div class="brand">
@@ -15,6 +32,10 @@
           <h1>Money Slice</h1>
           <p class="subtitle">Transaction browser</p>
         </div>
+      </div>
+      <div id="user-menu" class="user-menu" hidden>
+        <span id="user-name"></span>
+        <button type="button" id="logout-btn" class="text-btn">Sign out</button>
       </div>
       <div id="balance-widget" class="balance-widget">
         <span class="balance-label">Loading balance&hellip;</span>
@@ -33,10 +54,6 @@
           <div class="field">
             <label for="upload-file">CSV file</label>
             <input type="file" id="upload-file" accept=".csv" required />
-          </div>
-          <div class="field">
-            <label for="upload-account">Whose account?</label>
-            <select id="upload-account" required><option value="">Choose…</option><option value="tiarnan">Tiarnan</option><option value="deirbhile">Deirbhile</option></select>
           </div>
           <div class="field">
             <label for="upload-mapping">Bank mapping</label>
@@ -64,10 +81,6 @@
       </div>
       <form id="add-form" hidden>
         <div class="filters-grid">
-          <div class="field">
-            <label for="add-account">Whose account?</label>
-            <select id="add-account" required><option value="">Choose…</option><option value="tiarnan">Tiarnan</option><option value="deirbhile">Deirbhile</option></select>
-          </div>
           <div class="field">
             <label for="add-date">Date</label>
             <input type="date" id="add-date" required />

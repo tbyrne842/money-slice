@@ -12,20 +12,24 @@ Run with:
 
 Then open http://localhost:8000
 """
+import os
+import secrets
 import tempfile
 from datetime import date as date_type
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Optional
 
 from bson import ObjectId
 from bson.errors import InvalidId
-from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 
 import categorisation.rules as categorisation_rules
 import sharing.apply_defaults as apply_defaults_module
+from auth import AccountLocked, authenticate, create_user, current_user
 from api.queries import list_distinct_accounts, list_distinct_categories, query_transactions
 from db.mongo import get_db
 from ingestion.csv_importer import list_mapping_names, parse_csv, save_transactions
@@ -59,6 +63,63 @@ class NoCacheMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(NoCacheMiddleware)
 
+_session_secret = os.environ.get("SESSION_SECRET")
+if not _session_secret:
+    # Fine for local use, but everyone is signed out whenever the server
+    # restarts. Set SESSION_SECRET to keep sessions across restarts.
+    print("SESSION_SECRET not set - using a random one; sessions reset on restart.")
+    _session_secret = secrets.token_urlsafe(32)
+
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=_session_secret,
+    session_cookie="moneyslice_session",
+    same_site="lax",
+    max_age=14 * 24 * 3600,
+)
+
+
+class Credentials(BaseModel):
+    username: str
+    password: str
+
+
+def _start_session(request: Request, username: str) -> dict:
+    request.session.clear()
+    request.session["user"] = username
+    return {"username": username}
+
+
+@app.post("/api/auth/register", status_code=201)
+def register(creds: Credentials, request: Request) -> dict:
+    try:
+        username = create_user(get_db(), creds.username, creds.password)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _start_session(request, username)
+
+
+@app.post("/api/auth/login")
+def login(creds: Credentials, request: Request) -> dict:
+    try:
+        username = authenticate(get_db(), creds.username, creds.password)
+    except AccountLocked:
+        raise HTTPException(status_code=429, detail="Too many failed attempts. Try again in a few minutes.")
+    if username is None:
+        raise HTTPException(status_code=401, detail="Incorrect username or password.")
+    return _start_session(request, username)
+
+
+@app.post("/api/auth/logout")
+def logout(request: Request) -> dict:
+    request.session.clear()
+    return {"status": "signed out"}
+
+
+@app.get("/api/auth/me")
+def me(user: str = Depends(current_user)) -> dict:
+    return {"username": user}
+
 
 @app.get("/api/health")
 def health():
@@ -75,10 +136,12 @@ def get_transactions(
     search: Optional[str] = None,
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=500),
+    user: str = Depends(current_user),
 ):
     db = get_db()
     return query_transactions(
         db,
+        owner=user,
         account_id=account_id,
         category=category,
         is_shared=is_shared,
@@ -91,17 +154,17 @@ def get_transactions(
 
 
 @app.get("/api/categories")
-def get_categories():
-    return list_distinct_categories(get_db())
+def get_categories(user: str = Depends(current_user)):
+    return list_distinct_categories(get_db(), user)
 
 
 @app.get("/api/accounts")
-def get_accounts():
-    return list_distinct_accounts(get_db())
+def get_accounts(user: str = Depends(current_user)):
+    return list_distinct_accounts(get_db(), user)
 
 
 @app.get("/api/mappings")
-def get_mappings() -> list[str]:
+def get_mappings(user: str = Depends(current_user)) -> list[str]:
     return list_mapping_names()
 
 
@@ -110,7 +173,10 @@ def get_settlement(
     start: Optional[date_type] = None,
     end: Optional[date_type] = None,
     tiarnan_ratio: Optional[float] = None,
+    user: str = Depends(current_user),
 ) -> dict:
+    # Interim: still the fixed two-person balance (owners 'tiarnan' and
+    # 'deirbhile') until households replace it. Login required.
     db = get_db()
     return calculate_settlement(db, tiarnan_ratio=tiarnan_ratio, start=start, end=end)
 
@@ -118,16 +184,16 @@ def get_settlement(
 @app.post("/api/import")
 async def import_csv(
     file: UploadFile = File(...),
-    owner: Literal["tiarnan", "deirbhile"] = Form(...),
     mapping: str = Form(...),
     source: str = Form("csv"),
+    user: str = Depends(current_user),
 ) -> dict:
     with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as tmp:
         tmp.write(await file.read())
         tmp_path = tmp.name
 
     try:
-        transactions = parse_csv(tmp_path, owner, mapping, owner=owner)
+        transactions = parse_csv(tmp_path, user, mapping, owner=user)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     finally:
@@ -151,7 +217,6 @@ async def import_csv(
 
 
 class ManualTransactionIn(BaseModel):
-    owner: Literal["tiarnan", "deirbhile"]
     date: date_type
     amount: float
     description_raw: str
@@ -165,10 +230,10 @@ class TransactionPatch(BaseModel):
 
 
 @app.post("/api/transactions", status_code=201)
-def create_transaction(payload: ManualTransactionIn) -> dict:
+def create_transaction(payload: ManualTransactionIn, user: str = Depends(current_user)) -> dict:
     txn = Transaction(
-        account_id=payload.owner,
-        owner=payload.owner,
+        account_id=user,
+        owner=user,
         date=payload.date,
         amount=payload.amount,
         description_raw=payload.description_raw,
@@ -197,7 +262,9 @@ def create_transaction(payload: ManualTransactionIn) -> dict:
 
 
 @app.patch("/api/transactions/{transaction_id}")
-def patch_transaction(transaction_id: str, patch: TransactionPatch) -> dict:
+def patch_transaction(
+    transaction_id: str, patch: TransactionPatch, user: str = Depends(current_user)
+) -> dict:
     update_fields = patch.model_dump(exclude_unset=True)
     if not update_fields:
         raise HTTPException(status_code=400, detail="No fields provided to update.")
@@ -210,11 +277,12 @@ def patch_transaction(transaction_id: str, patch: TransactionPatch) -> dict:
         ) from exc
 
     db = get_db()
-    result = db.transactions.update_one({"_id": object_id}, {"$set": update_fields})
+    # Scoped to the owner: someone else's transaction is indistinguishable from a missing one.
+    result = db.transactions.update_one({"_id": object_id, "owner": user}, {"$set": update_fields})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail=f"No transaction with id '{transaction_id}'.")
 
-    updated = db.transactions.find_one({"_id": object_id})
+    updated = db.transactions.find_one({"_id": object_id, "owner": user})
     updated["_id"] = str(updated["_id"])
     return updated
 

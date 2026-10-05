@@ -14,6 +14,13 @@ import pytest
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 
+@pytest.fixture(autouse=True)
+def _reset_login_lockouts():
+    import auth
+
+    auth.reset_lockouts()
+
+
 @pytest.fixture
 def fixture_path():
     """Returns the absolute path to a file under tests/fixtures/."""

@@ -27,6 +27,8 @@ def ensure_indexes(db: Database) -> None:
     db.transactions.create_index([("account_id", ASCENDING), ("date", ASCENDING)])
     db.transactions.create_index([("category", ASCENDING)])
     db.transactions.create_index([("is_shared", ASCENDING)])
+    db.users.create_index([("username", ASCENDING)], unique=True)
+    db.transactions.create_index([("owner", ASCENDING)])
     db.accounts.create_index([("id", ASCENDING)], unique=True)
 
 
