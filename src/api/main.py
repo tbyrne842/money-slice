@@ -34,6 +34,18 @@ from api.queries import list_distinct_accounts, list_distinct_categories, query_
 from db.mongo import get_db
 from ingestion.csv_importer import list_mapping_names, parse_csv, save_transactions
 from models import Transaction
+from households import (
+    HouseholdError,
+    create_household,
+    get_household,
+    household_view,
+    join_household,
+    leave_household,
+    member_shares,
+    rotate_invite_code,
+    set_shares,
+    visible_owners,
+)
 from sharing.settlement import calculate_settlement
 
 app = FastAPI(title="Money Slice API")
@@ -126,9 +138,21 @@ def health():
     return {"status": "ok"}
 
 
+def _owners_for_view(db, user: str, owner: Optional[str]) -> list[str]:
+    """Owners whose transactions `user` may view, optionally narrowed to one of them."""
+    owners = visible_owners(db, user)
+    if owner is None:
+        return owners
+    if owner not in owners:
+        # Indistinguishable from a username that doesn't exist.
+        raise HTTPException(status_code=404, detail=f"No household member '{owner}'.")
+    return [owner]
+
+
 @app.get("/api/transactions")
 def get_transactions(
     account_id: Optional[str] = None,
+    owner: Optional[str] = None,
     category: Optional[str] = None,
     is_shared: Optional[bool] = None,
     start: Optional[str] = None,
@@ -139,9 +163,10 @@ def get_transactions(
     user: str = Depends(current_user),
 ):
     db = get_db()
+    owners = _owners_for_view(db, user, owner)
     return query_transactions(
         db,
-        owner=user,
+        owners=owners,
         account_id=account_id,
         category=category,
         is_shared=is_shared,
@@ -155,12 +180,12 @@ def get_transactions(
 
 @app.get("/api/categories")
 def get_categories(user: str = Depends(current_user)):
-    return list_distinct_categories(get_db(), user)
+    return list_distinct_categories(get_db(), visible_owners(get_db(), user))
 
 
 @app.get("/api/accounts")
 def get_accounts(user: str = Depends(current_user)):
-    return list_distinct_accounts(get_db(), user)
+    return list_distinct_accounts(get_db(), visible_owners(get_db(), user))
 
 
 @app.get("/api/mappings")
@@ -168,17 +193,75 @@ def get_mappings(user: str = Depends(current_user)) -> list[str]:
     return list_mapping_names()
 
 
+def _household_or_http_error(db, user: str) -> dict:
+    household = get_household(db, user)
+    if household is None:
+        raise HTTPException(status_code=404, detail="You're not in a household.")
+    return household
+
+
+def _household_call(fn, *args) -> dict:
+    try:
+        return household_view(fn(*args))
+    except HouseholdError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.detail) from exc
+
+
+class HouseholdCreate(BaseModel):
+    name: str
+
+
+class JoinRequest(BaseModel):
+    invite_code: str
+
+
+class SharesUpdate(BaseModel):
+    shares: dict[str, float]
+
+
+@app.post("/api/households", status_code=201)
+def create_household_endpoint(payload: HouseholdCreate, user: str = Depends(current_user)) -> dict:
+    return _household_call(create_household, get_db(), user, payload.name)
+
+
+@app.post("/api/households/join")
+def join_household_endpoint(payload: JoinRequest, user: str = Depends(current_user)) -> dict:
+    return _household_call(join_household, get_db(), user, payload.invite_code)
+
+
+@app.get("/api/households/me")
+def get_my_household(user: str = Depends(current_user)) -> dict:
+    return household_view(_household_or_http_error(get_db(), user))
+
+
+@app.put("/api/households/me/shares")
+def update_shares(payload: SharesUpdate, user: str = Depends(current_user)) -> dict:
+    return _household_call(set_shares, get_db(), user, payload.shares)
+
+
+@app.post("/api/households/me/invite-code")
+def rotate_code(user: str = Depends(current_user)) -> dict:
+    return _household_call(rotate_invite_code, get_db(), user)
+
+
+@app.post("/api/households/me/leave")
+def leave_household_endpoint(user: str = Depends(current_user)) -> dict:
+    try:
+        leave_household(get_db(), user)
+    except HouseholdError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.detail) from exc
+    return {"status": "left"}
+
+
 @app.get("/api/settlement")
 def get_settlement(
     start: Optional[date_type] = None,
     end: Optional[date_type] = None,
-    tiarnan_ratio: Optional[float] = None,
     user: str = Depends(current_user),
 ) -> dict:
-    # Interim: still the fixed two-person balance (owners 'tiarnan' and
-    # 'deirbhile') until households replace it. Login required.
     db = get_db()
-    return calculate_settlement(db, tiarnan_ratio=tiarnan_ratio, start=start, end=end)
+    household = _household_or_http_error(db, user)
+    return calculate_settlement(db, member_shares(household), start=start, end=end)
 
 
 @app.post("/api/import")

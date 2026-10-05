@@ -22,8 +22,7 @@ def client(monkeypatch):
     db = mongomock.MongoClient()["finance_tracker_test"]
     monkeypatch.setattr(api_main, "get_db", lambda: db)
     test_client = TestClient(api_main.app)
-    # Everything except /api/health needs a session, so sign in as tiarnan
-    # (the settlement endpoint's fixed two-person owners are tiarnan/deirbhile).
+    # Everything except /api/health needs a session, so sign in as tiarnan.
     res = test_client.post("/api/auth/register", json={"username": "tiarnan", "password": "correct horse battery"})
     assert res.status_code == 201
     return test_client, db
@@ -123,6 +122,17 @@ def test_frontend_index_includes_balance_widget(client):
     assert 'id="balance-widget"' in res.text
 
 
+def test_frontend_index_includes_household_panel_and_owner_column(client):
+    test_client, _ = client
+    res = test_client.get("/")
+    assert res.status_code == 200
+    assert 'id="household-body"' in res.text
+    assert 'id="scope"' in res.text
+    assert 'data-tab="household"' in res.text
+    assert "<th>Owner</th>" in res.text
+    assert 'id="account"' not in res.text
+
+
 def test_static_assets_are_not_cached(client):
     test_client, _ = client
     for path in ("/", "/app.js", "/style.css"):
@@ -188,28 +198,38 @@ def test_get_mappings_lists_known_mappings(client):
 
 # --- settlement -----------------------------------------------------------
 
-def test_settlement_endpoint_uses_config_default_ratio(client):
+def test_settlement_requires_a_household(client):
+    test_client, _ = client
+    assert test_client.get("/api/settlement").status_code == 404
+
+
+def test_settlement_endpoint_returns_household_balance(client):
     test_client, db = client
-    db.transactions.insert_one(
-        {"owner": "tiarnan", "amount": -200.0, "is_shared": True, "date": "2026-08-01"}
-    )
+    test_client.post("/api/households", json={"name": "Home"})
+    db.transactions.insert_one({"owner": "tiarnan", "amount": -200.0, "is_shared": True, "date": "2026-08-01"})
+
     response = test_client.get("/api/settlement")
 
     assert response.status_code == 200
     body = response.json()
     assert set(body.keys()) == {
-        "tiarnan_ratio",
+        "shares",
         "total_shared",
-        "paid_by_owner",
+        "paid_by_member",
         "fair_share",
-        "settled_by_owner",
+        "settled_sent",
+        "settled_received",
         "balance",
+        "transfers",
+        "unattributed_settle_ups",
         "settlement_text",
     }
+    assert body["total_shared"] == 200.0
 
 
-def test_settlement_endpoint_respects_explicit_ratio_and_date_range(client):
+def test_settlement_endpoint_respects_date_range(client):
     test_client, db = client
+    test_client.post("/api/households", json={"name": "Home"})
     db.transactions.insert_many(
         [
             {"owner": "tiarnan", "amount": -100.0, "is_shared": True, "date": "2026-07-15"},
@@ -217,36 +237,9 @@ def test_settlement_endpoint_respects_explicit_ratio_and_date_range(client):
         ]
     )
 
-    response = test_client.get(
-        "/api/settlement",
-        params={"tiarnan_ratio": 0.6, "start": "2026-08-01", "end": "2026-08-31"},
-    )
+    body = test_client.get("/api/settlement", params={"start": "2026-08-01", "end": "2026-08-31"}).json()
 
-    body = response.json()
-    assert body["tiarnan_ratio"] == 0.6
     assert body["total_shared"] == 100.0  # only the August transaction
-
-
-def test_settlement_endpoint_reflects_settle_up_payment(client):
-    test_client, db = client
-    db.transactions.insert_many(
-        [
-            {"owner": "deirbhile", "amount": -200.0, "is_shared": True, "date": "2026-08-01"},
-            {
-                "owner": "tiarnan",
-                "amount": -100.0,
-                "is_shared": False,
-                "category": "partner_contribution",
-                "date": "2026-08-05",
-            },
-        ]
-    )
-
-    response = test_client.get("/api/settlement")
-    body = response.json()
-    assert body["settled_by_owner"]["tiarnan"] == 100.0
-    assert body["balance"]["tiarnan"] == 0.0
-    assert body["settlement_text"] == "Already settled - nothing owed either way"
 
 
 # --- manual add + inline edit -------------------------------------------
