@@ -18,7 +18,10 @@ FIXTURES_DIR = Path(__file__).parent / "fixtures"
 def _reset_login_lockouts():
     import auth
 
+    import households
+
     auth.reset_lockouts()
+    households.reset_join_lockouts()
 
 
 @pytest.fixture
