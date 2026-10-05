@@ -116,11 +116,23 @@
       <div id="add-result" class="upload-result" hidden></div>
     </section>
 
+    <section class="upload-panel">
+      <div class="upload-panel-header">
+        <h2>Household</h2>
+        <button id="toggle-household" class="text-btn">Show</button>
+      </div>
+      <div id="household-body" hidden></div>
+    </section>
+
     <section class="filters">
       <div class="filters-grid">
         <div class="field">
           <label for="account">Account</label>
           <select id="account"><option value="">All accounts</option></select>
+        </div>
+        <div class="field" id="owner-field" hidden>
+          <label for="owner">Member</label>
+          <select id="owner"><option value="">Everyone</option></select>
         </div>
         <div class="field">
           <label for="category">Category</label>
@@ -160,6 +172,7 @@
           <tr>
             <th>Date</th>
             <th>Description</th>
+            <th>Owner</th>
             <th>Account</th>
             <th>Category</th>
             <th>Shared</th>

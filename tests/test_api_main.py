@@ -122,6 +122,15 @@ def test_frontend_index_includes_balance_widget(client):
     assert 'id="balance-widget"' in res.text
 
 
+def test_frontend_index_includes_household_panel_and_owner_column(client):
+    test_client, _ = client
+    res = test_client.get("/")
+    assert res.status_code == 200
+    assert 'id="household-body"' in res.text
+    assert 'id="owner"' in res.text
+    assert "<th>Owner</th>" in res.text
+
+
 def test_static_assets_are_not_cached(client):
     test_client, _ = client
     for path in ("/", "/app.js", "/style.css"):

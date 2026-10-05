@@ -3,7 +3,21 @@ const state = {
   limit: 50,
 };
 
+// Transaction text comes from bank CSVs, and household members can now
+// see each other's rows - so everything interpolated into innerHTML is escaped.
+function esc(value) {
+  const map = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+  return String(value ?? "").replace(/[&<>"']/g, (c) => map[c]);
+}
+
+let currentUser = null;
+let household = null;
+
 const els = {
+  owner: document.getElementById("owner"),
+  ownerField: document.getElementById("owner-field"),
+  toggleHousehold: document.getElementById("toggle-household"),
+  householdBody: document.getElementById("household-body"),
   account: document.getElementById("account"),
   category: document.getElementById("category"),
   shared: document.getElementById("shared"),
@@ -47,6 +61,7 @@ let knownCategories = [];
 function buildQuery() {
   const params = new URLSearchParams();
   if (els.account.value) params.set("account_id", els.account.value);
+  if (els.owner.value) params.set("owner", els.owner.value);
   if (els.category.value) params.set("category", els.category.value);
   if (els.shared.value) params.set("is_shared", els.shared.value);
   if (els.start.value) params.set("start", els.start.value);
@@ -107,36 +122,164 @@ async function loadMappings() {
 }
 
 async function loadBalance() {
+  const widget = els.balanceWidget;
+  if (!household) {
+    widget.className = "balance-widget settled";
+    widget.removeAttribute("title");
+    widget.innerHTML = '<span class="balance-label">No household yet</span><span class="balance-amount">Create or join one</span>';
+    return;
+  }
   try {
-    const settlement = await fetch("/api/settlement").then((r) => r.json());
-    const tiarnanBalance = settlement.balance.tiarnan;
-    const plainAmount = (n) => `\u00a3${Math.abs(n).toFixed(2)}`;
+    const settlement = await fetch("/api/settlement").then((r) => {
+      if (!r.ok) throw new Error("settlement unavailable");
+      return r.json();
+    });
+    const mine = settlement.balance[currentUser] ?? 0;
+    const amount = `\u00a3${Math.abs(mine).toFixed(2)}`;
 
     let statusClass, label, amountText;
-    if (Math.abs(tiarnanBalance) < 0.005) {
-      statusClass = "settled";
-      label = "Household balance";
-      amountText = "Settled up";
-    } else if (tiarnanBalance > 0) {
-      statusClass = "owed-to-deirbhile";
-      label = "Tiarnan owes Deirbhile";
-      amountText = plainAmount(tiarnanBalance);
+    if (Math.abs(mine) < 0.005) {
+      [statusClass, label, amountText] = ["settled", "Household balance", "Settled up"];
+    } else if (mine > 0) {
+      [statusClass, label, amountText] = ["owed-to-me", "You are owed", amount];
     } else {
-      statusClass = "owed-to-tiarnan";
-      label = "Deirbhile owes Tiarnan";
-      amountText = plainAmount(tiarnanBalance);
+      [statusClass, label, amountText] = ["i-owe", "You owe", amount];
     }
 
-    els.balanceWidget.className = `balance-widget ${statusClass}`;
-    els.balanceWidget.innerHTML = `
+    widget.className = `balance-widget ${statusClass}`;
+    widget.title = settlement.settlement_text;
+    widget.innerHTML = `
       <span class="balance-label">${label}</span>
       <span class="balance-amount">${amountText}</span>
     `;
   } catch (err) {
-    els.balanceWidget.className = "balance-widget settled";
-    els.balanceWidget.innerHTML = '<span class="balance-label">Balance unavailable</span>';
+    widget.className = "balance-widget settled";
+    widget.innerHTML = '<span class="balance-label">Balance unavailable</span>';
   }
 }
+
+// --- household panel ---------------------------------------------------
+
+function populateOwnerFilter() {
+  els.owner.length = 1;
+  els.ownerField.hidden = !household;
+  if (!household) return;
+  for (const m of household.members) {
+    const opt = document.createElement("option");
+    opt.value = m.username;
+    opt.textContent = m.username === currentUser ? `${m.username} (you)` : m.username;
+    els.owner.appendChild(opt);
+  }
+}
+
+function renderHousehold() {
+  if (!household) {
+    els.householdBody.innerHTML = `
+      <p class="household-note">You're not in a household yet. Create one and share its invite code, or join one with a code.</p>
+      <div class="filters-grid">
+        <form id="household-create" class="household-form">
+          <div class="field"><label for="household-name">New household name</label>
+            <input type="text" id="household-name" maxlength="50" required /></div>
+          <button type="submit">Create</button>
+        </form>
+        <form id="household-join" class="household-form">
+          <div class="field"><label for="household-code">Invite code</label>
+            <input type="text" id="household-code" autocomplete="off" required /></div>
+          <button type="submit">Join</button>
+        </form>
+      </div>
+      <p id="household-status" class="household-status"></p>`;
+    return;
+  }
+  const rows = household.members
+    .map(
+      (m) => `<tr><td>${esc(m.username)}${m.username === currentUser ? " (you)" : ""}</td>
+        <td><input type="number" class="share-input" data-user="${esc(m.username)}" min="0" max="100" step="any"
+          value="${+(m.share * 100).toFixed(6)}" /> %</td></tr>`
+    )
+    .join("");
+  els.householdBody.innerHTML = `
+    <p><strong>${esc(household.name)}</strong> &middot; invite code <code class="invite-code">${esc(household.invite_code)}</code></p>
+    <table class="household-table"><thead><tr><th>Member</th><th>Share of joint spend</th></tr></thead>
+      <tbody>${rows}</tbody></table>
+    <div class="upload-actions">
+      <button type="button" id="save-shares">Save shares</button>
+      <button type="button" id="rotate-code" class="text-btn">New invite code</button>
+      <button type="button" id="leave-household" class="text-btn">Leave household</button>
+      <span id="household-status" class="household-status"></span>
+    </div>`;
+}
+
+function householdStatus(message, isError) {
+  const el = document.getElementById("household-status");
+  if (!el) return;
+  el.textContent = message;
+  el.className = `household-status${isError ? " error" : ""}`;
+}
+
+async function householdRequest(url, method, body) {
+  const res = await fetch(url, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const detail = Array.isArray(data.detail) ? "Invalid input." : data.detail;
+    householdStatus(detail || "Something went wrong.", true);
+    return null;
+  }
+  return data;
+}
+
+async function loadHousehold() {
+  const res = await fetch("/api/households/me");
+  household = res.ok ? await res.json() : null;
+  renderHousehold();
+  populateOwnerFilter();
+  loadBalance();
+}
+
+els.toggleHousehold.addEventListener("click", () => {
+  const showing = !els.householdBody.hidden;
+  els.householdBody.hidden = showing;
+  els.toggleHousehold.textContent = showing ? "Show" : "Hide";
+});
+
+els.householdBody.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  let result = null;
+  if (e.target.id === "household-create") {
+    result = await householdRequest("/api/households", "POST", { name: document.getElementById("household-name").value });
+  } else if (e.target.id === "household-join") {
+    result = await householdRequest("/api/households/join", "POST", { invite_code: document.getElementById("household-code").value });
+  }
+  if (result) location.reload(); // membership changes what's visible everywhere
+});
+
+els.householdBody.addEventListener("click", async (e) => {
+  if (e.target.id === "save-shares") {
+    const shares = {};
+    for (const input of els.householdBody.querySelectorAll(".share-input")) {
+      shares[input.dataset.user] = Number(input.value) / 100;
+    }
+    const total = Object.values(shares).reduce((a, b) => a + b, 0);
+    if (Math.abs(total - 1) > 1e-6) {
+      householdStatus(`Shares add up to ${(total * 100).toFixed(2)}% - they need to make 100%.`, true);
+      return;
+    }
+    if (await householdRequest("/api/households/me/shares", "PUT", { shares })) {
+      await loadHousehold();
+      householdStatus("Shares saved.", false);
+    }
+  } else if (e.target.id === "rotate-code") {
+    if (!confirm("Replace the invite code? The old one will stop working.")) return;
+    if (await householdRequest("/api/households/me/invite-code", "POST")) await loadHousehold();
+  } else if (e.target.id === "leave-household") {
+    if (!confirm("Leave this household? You'll stop seeing each other's transactions.")) return;
+    if (await householdRequest("/api/households/me/leave", "POST")) location.reload();
+  }
+});
 
 function formatAmount(amount) {
   const abs = Math.abs(amount).toFixed(2);
@@ -161,7 +304,7 @@ function categoryColor(name) {
 function renderCategoryCell(txn) {
   if (txn.category) {
     const { bg, text } = categoryColor(txn.category);
-    return `<span class="category-chip" data-value="${txn.category}" style="background:${bg};color:${text}">${txn.category}</span>`;
+    return `<span class="category-chip" data-value="${esc(txn.category)}" style="background:${bg};color:${text}">${esc(txn.category)}</span>`;
   }
   return `<span class="category-chip uncategorized" data-value="">uncategorized</span>`;
 }
@@ -177,11 +320,14 @@ function renderRows(items) {
   for (const txn of items) {
     const tr = document.createElement("tr");
     tr.dataset.id = txn._id;
+    // Household members can view each other's rows but only edit their own.
+    if (txn.owner !== currentUser) tr.classList.add("readonly");
 
     tr.innerHTML = `
-      <td>${txn.date ?? ""}</td>
-      <td>${txn.description_raw ?? ""}</td>
-      <td>${txn.account_id ?? ""}</td>
+      <td>${esc(txn.date)}</td>
+      <td>${esc(txn.description_raw)}</td>
+      <td>${esc(txn.owner)}</td>
+      <td>${esc(txn.account_id)}</td>
       <td class="cat-cell">${renderCategoryCell(txn)}</td>
       <td class="shared-cell">${renderSharedCell(txn)}</td>
       <td class="amount-col ${txn.amount < 0 ? "negative" : "positive"}">${formatAmount(txn.amount)}</td>
@@ -229,12 +375,13 @@ els.search.addEventListener("input", () => {
   searchDebounce = setTimeout(resetAndReload, 300);
 });
 
-for (const el of [els.account, els.category, els.shared, els.start, els.end]) {
+for (const el of [els.owner, els.account, els.category, els.shared, els.start, els.end]) {
   el.addEventListener("change", resetAndReload);
 }
 
 els.clearFilters.addEventListener("click", () => {
   els.account.value = "";
+  els.owner.value = "";
   els.category.value = "";
   els.shared.value = "";
   els.start.value = "";
@@ -334,11 +481,12 @@ async function startApp() {
     return;
   }
   const { username } = await res.json();
+  currentUser = username;
   authEls.userName.textContent = username;
   authEls.userMenu.hidden = false;
   loadFilters().then(loadTransactions);
   loadMappings();
-  loadBalance();
+  loadHousehold();
 }
 
 startApp();
@@ -478,7 +626,7 @@ async function cycleSharedCell(tr, id, currentValue) {
 
 els.body.addEventListener("click", (e) => {
   const tr = e.target.closest("tr");
-  if (!tr) return;
+  if (!tr || tr.classList.contains("readonly")) return;
   const id = tr.dataset.id;
 
   const chip = e.target.closest(".category-chip");

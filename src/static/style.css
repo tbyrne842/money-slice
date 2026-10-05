@@ -278,13 +278,13 @@ td.amount-col.positive {
   font-size: 0.9rem;
 }
 
-.balance-widget.owed-to-tiarnan,
-.balance-widget.owed-to-deirbhile {
+.balance-widget.owed-to-me,
+.balance-widget.i-owe {
   background: var(--shared);
 }
 
-.balance-widget.owed-to-tiarnan .balance-amount,
-.balance-widget.owed-to-deirbhile .balance-amount {
+.balance-widget.owed-to-me .balance-amount,
+.balance-widget.i-owe .balance-amount {
   color: var(--shared-text);
 }
 
@@ -472,5 +472,53 @@ td.amount-col.positive {
 }
 
 .user-menu[hidden] {
+  display: none;
+}
+
+tr.readonly td {
+  color: var(--text-muted);
+}
+
+tr.readonly .category-chip,
+tr.readonly .badge {
+  cursor: default;
+}
+
+.household-note {
+  margin: 0 0 12px;
+  color: var(--text-muted);
+}
+
+.household-form {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.household-table {
+  margin-bottom: 12px;
+}
+
+.share-input {
+  width: 90px;
+}
+
+.invite-code {
+  font-size: 1.05rem;
+  letter-spacing: 0.08em;
+  user-select: all;
+}
+
+.household-status {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.household-status.error {
+  color: var(--negative);
+}
+
+#household-body[hidden],
+#owner-field[hidden] {
   display: none;
 }
