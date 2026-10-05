@@ -14,11 +14,13 @@ let currentUser = null;
 let household = null;
 
 const els = {
-  owner: document.getElementById("owner"),
-  ownerField: document.getElementById("owner-field"),
-  toggleHousehold: document.getElementById("toggle-household"),
+  scope: document.getElementById("scope"),
+  sharingHint: document.getElementById("sharing-hint"),
   householdBody: document.getElementById("household-body"),
-  account: document.getElementById("account"),
+  settlementPanel: document.getElementById("settlement-panel"),
+  settlementBody: document.getElementById("settlement-body"),
+  settleStart: document.getElementById("settle-start"),
+  settleEnd: document.getElementById("settle-end"),
   category: document.getElementById("category"),
   shared: document.getElementById("shared"),
   start: document.getElementById("start"),
@@ -60,8 +62,9 @@ let knownCategories = [];
 
 function buildQuery() {
   const params = new URLSearchParams();
-  if (els.account.value) params.set("account_id", els.account.value);
-  if (els.owner.value) params.set("owner", els.owner.value);
+  // "Mine" narrows the household view down to your own rows; with no
+  // household the server already only returns your own.
+  if (els.scope.value === "mine") params.set("owner", currentUser);
   if (els.category.value) params.set("category", els.category.value);
   if (els.shared.value) params.set("is_shared", els.shared.value);
   if (els.start.value) params.set("start", els.start.value);
@@ -73,25 +76,14 @@ function buildQuery() {
 }
 
 async function loadFilters() {
-  const [accounts, categories] = await Promise.all([
-    fetch("/api/accounts").then((r) => r.json()),
-    fetch("/api/categories").then((r) => r.json()),
-  ]);
+  const categories = await fetch("/api/categories").then((r) => r.json());
 
   knownCategories = categories;
 
   // Clear everything but the "All ..." default option, so this can be
-  // safely re-called (e.g. after an upload adds a new account/category)
+  // safely re-called (e.g. after an upload adds a new category)
   // without duplicating entries.
-  els.account.length = 1;
   els.category.length = 1;
-
-  for (const acc of accounts) {
-    const opt = document.createElement("option");
-    opt.value = acc;
-    opt.textContent = acc;
-    els.account.appendChild(opt);
-  }
   for (const cat of categories) {
     const opt = document.createElement("option");
     opt.value = cat;
@@ -126,6 +118,7 @@ async function loadBalance() {
   if (!household) {
     widget.className = "balance-widget settled";
     widget.removeAttribute("title");
+    els.settlementPanel.hidden = true;
     widget.innerHTML = '<span class="balance-label">No household yet</span><span class="balance-amount">Create or join one</span>';
     return;
   }
@@ -146,6 +139,10 @@ async function loadBalance() {
       [statusClass, label, amountText] = ["i-owe", "You owe", amount];
     }
 
+    // The widget is always all-time; the breakdown follows the date range.
+    if (els.settleStart.value || els.settleEnd.value) loadSettlementPanel();
+    else renderSettlement(settlement);
+
     widget.className = `balance-widget ${statusClass}`;
     widget.title = settlement.settlement_text;
     widget.innerHTML = `
@@ -160,16 +157,57 @@ async function loadBalance() {
 
 // --- household panel ---------------------------------------------------
 
-function populateOwnerFilter() {
-  els.owner.length = 1;
-  els.ownerField.hidden = !household;
-  if (!household) return;
-  for (const m of household.members) {
-    const opt = document.createElement("option");
-    opt.value = m.username;
-    opt.textContent = m.username === currentUser ? `${m.username} (you)` : m.username;
-    els.owner.appendChild(opt);
+let scopeInitialised = false;
+
+function updateScopeControl() {
+  const householdOption = els.scope.querySelector('option[value="household"]');
+  householdOption.disabled = !household;
+  if (!household) {
+    els.scope.value = "mine";
+  } else if (!scopeInitialised) {
+    els.scope.value = "household"; // default to the shared view once there's one to see
   }
+  scopeInitialised = true;
+  els.sharingHint.hidden = !!household;
+  document.body.classList.toggle("no-household", !household);
+}
+
+function money(n) {
+  return `${n < 0 ? "-" : ""}\u00a3${Math.abs(n).toFixed(2)}`;
+}
+
+function renderSettlement(data) {
+  els.settlementPanel.hidden = false;
+  const rows = Object.keys(data.shares)
+    .map(
+      (u) => `<tr>
+        <td>${esc(u)}${u === currentUser ? " (you)" : ""}</td>
+        <td>${+(data.shares[u] * 100).toFixed(2)}%</td>
+        <td>${money(data.paid_by_member[u])}</td>
+        <td>${money(data.fair_share[u])}</td>
+        <td class="${data.balance[u] < 0 ? "negative" : "positive"}">${money(data.balance[u])}</td>
+      </tr>`
+    )
+    .join("");
+  const ignored = data.unattributed_settle_ups
+    ? `<p class="household-note">${data.unattributed_settle_ups} settle-up payment(s) ignored: the recipient is unknown in a household of three or more.</p>`
+    : "";
+  els.settlementBody.innerHTML = `
+    <table class="household-table">
+      <thead><tr><th>Member</th><th>Share</th><th>Paid</th><th>Fair share</th><th>Balance</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <p><strong>${esc(data.settlement_text)}</strong> &middot; total shared spend ${money(data.total_shared)}</p>
+    ${ignored}`;
+}
+
+async function loadSettlementPanel() {
+  if (!household) return;
+  const params = new URLSearchParams();
+  if (els.settleStart.value) params.set("start", els.settleStart.value);
+  if (els.settleEnd.value) params.set("end", els.settleEnd.value);
+  const res = await fetch(`/api/settlement?${params}`);
+  if (res.ok) renderSettlement(await res.json());
 }
 
 function renderHousehold() {
@@ -236,15 +274,9 @@ async function loadHousehold() {
   const res = await fetch("/api/households/me");
   household = res.ok ? await res.json() : null;
   renderHousehold();
-  populateOwnerFilter();
+  updateScopeControl();
   loadBalance();
 }
-
-els.toggleHousehold.addEventListener("click", () => {
-  const showing = !els.householdBody.hidden;
-  els.householdBody.hidden = showing;
-  els.toggleHousehold.textContent = showing ? "Show" : "Hide";
-});
 
 els.householdBody.addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -309,10 +341,13 @@ function renderCategoryCell(txn) {
   return `<span class="category-chip uncategorized" data-value="">uncategorized</span>`;
 }
 
+const NO_HOUSEHOLD_TITLE = "Takes effect once you join a household";
+
 function renderSharedCell(txn) {
-  if (txn.is_shared === true) return `<span class="badge shared" data-value="true">Shared</span>`;
-  if (txn.is_shared === false) return `<span class="badge personal" data-value="false">Personal</span>`;
-  return `<span class="badge undecided" data-value="">Undecided</span>`;
+  const title = household ? "" : ` title="${NO_HOUSEHOLD_TITLE}"`;
+  if (txn.is_shared === true) return `<span class="badge shared" data-value="true"${title}>Shared</span>`;
+  if (txn.is_shared === false) return `<span class="badge personal" data-value="false"${title}>Personal</span>`;
+  return `<span class="badge undecided" data-value=""${title}>Undecided</span>`;
 }
 
 function renderRows(items) {
@@ -327,7 +362,6 @@ function renderRows(items) {
       <td>${esc(txn.date)}</td>
       <td>${esc(txn.description_raw)}</td>
       <td>${esc(txn.owner)}</td>
-      <td>${esc(txn.account_id)}</td>
       <td class="cat-cell">${renderCategoryCell(txn)}</td>
       <td class="shared-cell">${renderSharedCell(txn)}</td>
       <td class="amount-col ${txn.amount < 0 ? "negative" : "positive"}">${formatAmount(txn.amount)}</td>
@@ -375,13 +409,11 @@ els.search.addEventListener("input", () => {
   searchDebounce = setTimeout(resetAndReload, 300);
 });
 
-for (const el of [els.owner, els.account, els.category, els.shared, els.start, els.end]) {
+for (const el of [els.scope, els.category, els.shared, els.start, els.end]) {
   el.addEventListener("change", resetAndReload);
 }
 
 els.clearFilters.addEventListener("click", () => {
-  els.account.value = "";
-  els.owner.value = "";
   els.category.value = "";
   els.shared.value = "";
   els.start.value = "";
@@ -484,9 +516,10 @@ async function startApp() {
   currentUser = username;
   authEls.userName.textContent = username;
   authEls.userMenu.hidden = false;
-  loadFilters().then(loadTransactions);
   loadMappings();
-  loadHousehold();
+  // The household decides the default view, so it loads before the table does.
+  await loadHousehold();
+  loadFilters().then(loadTransactions);
 }
 
 startApp();
@@ -707,3 +740,24 @@ els.addForm.addEventListener("submit", async (e) => {
   }
 });
 
+
+// --- tabs and settlement controls ------------------------------------------
+
+function showTab(name) {
+  for (const tab of document.querySelectorAll(".tab")) {
+    tab.classList.toggle("active", tab.dataset.tab === name);
+  }
+  document.getElementById("tab-transactions").hidden = name !== "transactions";
+  document.getElementById("tab-household").hidden = name !== "household";
+}
+
+document.querySelector(".tabs").addEventListener("click", (e) => {
+  const tab = e.target.closest(".tab");
+  if (tab) showTab(tab.dataset.tab);
+});
+
+els.balanceWidget.addEventListener("click", () => showTab("household"));
+
+for (const el of [els.settleStart, els.settleEnd]) {
+  el.addEventListener("change", loadSettlementPanel);
+}

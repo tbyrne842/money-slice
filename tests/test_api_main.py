@@ -127,8 +127,10 @@ def test_frontend_index_includes_household_panel_and_owner_column(client):
     res = test_client.get("/")
     assert res.status_code == 200
     assert 'id="household-body"' in res.text
-    assert 'id="owner"' in res.text
+    assert 'id="scope"' in res.text
+    assert 'data-tab="household"' in res.text
     assert "<th>Owner</th>" in res.text
+    assert 'id="account"' not in res.text
 
 
 def test_static_assets_are_not_cached(client):

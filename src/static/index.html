@@ -43,7 +43,16 @@
     </div>
   </header>
 
-  <main>
+  <nav class="tabs">
+    <button type="button" class="tab active" data-tab="transactions">Transactions</button>
+    <button type="button" class="tab" data-tab="household">Household</button>
+  </nav>
+
+  <main id="tab-transactions">
+    <p id="sharing-hint" class="sharing-hint" hidden>
+      Marking a transaction shared only takes effect once you're in a household &mdash;
+      create or join one in the Household tab.
+    </p>
     <section class="upload-panel">
       <div class="upload-panel-header">
         <h2>Upload a statement</h2>
@@ -116,23 +125,14 @@
       <div id="add-result" class="upload-result" hidden></div>
     </section>
 
-    <section class="upload-panel">
-      <div class="upload-panel-header">
-        <h2>Household</h2>
-        <button id="toggle-household" class="text-btn">Show</button>
-      </div>
-      <div id="household-body" hidden></div>
-    </section>
-
     <section class="filters">
       <div class="filters-grid">
         <div class="field">
-          <label for="account">Account</label>
-          <select id="account"><option value="">All accounts</option></select>
-        </div>
-        <div class="field" id="owner-field" hidden>
-          <label for="owner">Member</label>
-          <select id="owner"><option value="">Everyone</option></select>
+          <label for="scope">View</label>
+          <select id="scope">
+            <option value="mine">Mine</option>
+            <option value="household">Household</option>
+          </select>
         </div>
         <div class="field">
           <label for="category">Category</label>
@@ -173,7 +173,6 @@
             <th>Date</th>
             <th>Description</th>
             <th>Owner</th>
-            <th>Account</th>
             <th>Category</th>
             <th>Shared</th>
             <th class="amount-col">Amount</th>
@@ -189,6 +188,32 @@
       <button id="prev-page">&larr; Previous</button>
       <span id="page-info"></span>
       <button id="next-page">Next &rarr;</button>
+    </section>
+  </main>
+
+  <main id="tab-household" hidden>
+    <section class="upload-panel">
+      <h2>Household</h2>
+      <div id="household-body"></div>
+    </section>
+
+    <section class="upload-panel" id="settlement-panel" hidden>
+      <h2>Settlement</h2>
+      <div class="filters-grid">
+        <div class="field">
+          <label for="settle-start">From</label>
+          <input type="date" id="settle-start" />
+        </div>
+        <div class="field">
+          <label for="settle-end">To</label>
+          <input type="date" id="settle-end" />
+        </div>
+      </div>
+      <p class="household-note">
+        Balances apply the current shares and members to all spend in this range. If shares or
+        membership have changed, start the range from that date. Positive = owed money.
+      </p>
+      <div id="settlement-body"></div>
     </section>
   </main>
 
