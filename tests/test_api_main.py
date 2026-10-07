@@ -221,7 +221,6 @@ def test_settlement_endpoint_returns_household_balance(client):
         "settled_received",
         "balance",
         "transfers",
-        "unattributed_settle_ups",
         "settlement_text",
     }
     assert body["total_shared"] == 200.0

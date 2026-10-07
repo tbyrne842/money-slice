@@ -46,6 +46,7 @@ from households import (
     set_shares,
     visible_owners,
 )
+from payments import delete_payment, list_payments, record_payment
 from sharing.settlement import calculate_settlement
 
 app = FastAPI(title="Money Slice API")
@@ -253,6 +254,41 @@ def leave_household_endpoint(user: str = Depends(current_user)) -> dict:
     return {"status": "left"}
 
 
+class PaymentCreate(BaseModel):
+    payer: str
+    payee: str
+    amount: float
+    date: Optional[date_type] = None
+    note: Optional[str] = None
+
+
+@app.post("/api/households/me/payments", status_code=201)
+def create_payment(payload: PaymentCreate, user: str = Depends(current_user)) -> dict:
+    try:
+        return record_payment(
+            get_db(), user, payload.payer, payload.payee, payload.amount, payload.date, payload.note
+        )
+    except HouseholdError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.detail) from exc
+
+
+@app.get("/api/households/me/payments")
+def get_payments(user: str = Depends(current_user)) -> list[dict]:
+    try:
+        return list_payments(get_db(), user)
+    except HouseholdError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.detail) from exc
+
+
+@app.delete("/api/households/me/payments/{payment_id}")
+def remove_payment(payment_id: str, user: str = Depends(current_user)) -> dict:
+    try:
+        delete_payment(get_db(), user, payment_id)
+    except HouseholdError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.detail) from exc
+    return {"status": "deleted"}
+
+
 @app.get("/api/settlement")
 def get_settlement(
     start: Optional[date_type] = None,
@@ -261,7 +297,9 @@ def get_settlement(
 ) -> dict:
     db = get_db()
     household = _household_or_http_error(db, user)
-    return calculate_settlement(db, member_shares(household), start=start, end=end)
+    return calculate_settlement(
+        db, member_shares(household), start=start, end=end, household_id=household["_id"]
+    )
 
 
 @app.post("/api/import")
