@@ -131,6 +131,7 @@ def test_frontend_index_includes_household_panel_and_owner_column(client):
     assert 'data-tab="household"' in res.text
     assert "<th>Owner</th>" in res.text
     assert 'id="account"' not in res.text
+    assert 'id="payment-form"' in res.text
 
 
 def test_static_assets_are_not_cached(client):

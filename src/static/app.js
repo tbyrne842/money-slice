@@ -19,6 +19,15 @@ const els = {
   householdBody: document.getElementById("household-body"),
   settlementPanel: document.getElementById("settlement-panel"),
   settlementBody: document.getElementById("settlement-body"),
+  paymentsPanel: document.getElementById("payments-panel"),
+  paymentForm: document.getElementById("payment-form"),
+  paymentPayer: document.getElementById("payment-payer"),
+  paymentPayee: document.getElementById("payment-payee"),
+  paymentAmount: document.getElementById("payment-amount"),
+  paymentDate: document.getElementById("payment-date"),
+  paymentNote: document.getElementById("payment-note"),
+  paymentStatus: document.getElementById("payment-status"),
+  paymentsBody: document.getElementById("payments-body"),
   settleStart: document.getElementById("settle-start"),
   settleEnd: document.getElementById("settle-end"),
   category: document.getElementById("category"),
@@ -119,6 +128,7 @@ async function loadBalance() {
     widget.className = "balance-widget settled";
     widget.removeAttribute("title");
     els.settlementPanel.hidden = true;
+    els.paymentsPanel.hidden = true;
     widget.innerHTML = '<span class="balance-label">No household yet</span><span class="balance-amount">Create or join one</span>';
     return;
   }
@@ -189,16 +199,19 @@ function renderSettlement(data) {
       </tr>`
     )
     .join("");
-  const ignored = data.unattributed_settle_ups
-    ? `<p class="household-note">${data.unattributed_settle_ups} settle-up payment(s) ignored: the recipient is unknown in a household of three or more.</p>`
-    : "";
+  const suggestions = data.transfers
+    .map(
+      (t) => `<button type="button" class="text-btn pay-suggestion" data-payer="${esc(t.from)}"
+        data-payee="${esc(t.to)}" data-amount="${t.amount}">Record: ${esc(t.from)} paid ${esc(t.to)} ${money(t.amount)}</button>`
+    )
+    .join(" ");
   els.settlementBody.innerHTML = `
     <table class="household-table">
       <thead><tr><th>Member</th><th>Share</th><th>Paid</th><th>Fair share</th><th>Balance</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
     <p><strong>${esc(data.settlement_text)}</strong> &middot; total shared spend ${money(data.total_shared)}</p>
-    ${ignored}`;
+    ${suggestions ? `<p class="household-note">Once paid, record it:</p><p>${suggestions}</p>` : ""}`;
 }
 
 async function loadSettlementPanel() {
@@ -275,6 +288,8 @@ async function loadHousehold() {
   household = res.ok ? await res.json() : null;
   renderHousehold();
   updateScopeControl();
+  populatePaymentForm();
+  loadPayments();
   loadBalance();
 }
 
@@ -740,6 +755,119 @@ els.addForm.addEventListener("submit", async (e) => {
   }
 });
 
+
+// --- settle-up payments ----------------------------------------------------
+
+function today() {
+  return new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD in the user's own timezone
+}
+
+function populatePaymentForm() {
+  if (!household) return;
+  const previous = { payer: els.paymentPayer.value, payee: els.paymentPayee.value };
+  const names = household.members.map((m) => m.username);
+  for (const select of [els.paymentPayer, els.paymentPayee]) {
+    select.innerHTML = names
+      .map((n) => `<option value="${esc(n)}">${esc(n)}${n === currentUser ? " (you)" : ""}</option>`)
+      .join("");
+  }
+  const others = names.filter((n) => n !== currentUser);
+  els.paymentPayer.value = names.includes(previous.payer) ? previous.payer : currentUser;
+  els.paymentPayee.value = names.includes(previous.payee) ? previous.payee : others[0] ?? currentUser;
+  if (!els.paymentDate.value) els.paymentDate.value = today();
+  els.paymentDate.max = today();
+}
+
+function paymentStatus(message, isError) {
+  els.paymentStatus.textContent = message;
+  els.paymentStatus.className = `household-status${isError ? " error" : ""}`;
+}
+
+async function loadPayments() {
+  if (!household) {
+    els.paymentsPanel.hidden = true;
+    return;
+  }
+  const res = await fetch("/api/households/me/payments");
+  if (!res.ok) return;
+  const payments = await res.json();
+  els.paymentsPanel.hidden = false;
+  if (payments.length === 0) {
+    els.paymentsBody.innerHTML = '<p class="household-note">No payments recorded yet.</p>';
+    return;
+  }
+  const rows = payments
+    .map(
+      (p) => `<tr>
+        <td>${esc(p.date)}</td>
+        <td>${esc(p.payer)} &rarr; ${esc(p.payee)}</td>
+        <td>${money(p.amount)}</td>
+        <td>${esc(p.note)}</td>
+        <td>${esc(p.recorded_by)}</td>
+        <td>${p.recorded_by === currentUser ? `<button type="button" class="text-btn delete-payment" data-id="${esc(p.id)}">Delete</button>` : ""}</td>
+      </tr>`
+    )
+    .join("");
+  els.paymentsBody.innerHTML = `<table class="household-table">
+    <thead><tr><th>Date</th><th>Payment</th><th>Amount</th><th>Note</th><th>Recorded by</th><th></th></tr></thead>
+    <tbody>${rows}</tbody></table>`;
+}
+
+async function paymentRequest(url, method, body) {
+  const res = await fetch(url, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    paymentStatus(Array.isArray(data.detail) ? "Invalid input." : data.detail || "Something went wrong.", true);
+    return null;
+  }
+  return data;
+}
+
+els.paymentForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const result = await paymentRequest("/api/households/me/payments", "POST", {
+    payer: els.paymentPayer.value,
+    payee: els.paymentPayee.value,
+    amount: Number(els.paymentAmount.value),
+    date: els.paymentDate.value,
+    note: els.paymentNote.value,
+  });
+  if (!result) return;
+  els.paymentAmount.value = "";
+  els.paymentNote.value = "";
+  paymentStatus("Payment recorded.", false);
+  loadPayments();
+  loadBalance();
+});
+
+els.paymentsBody.addEventListener("click", async (e) => {
+  const btn = e.target.closest(".delete-payment");
+  if (!btn) return;
+  if (!confirm("Delete this payment? Balances will change back.")) return;
+  if (await paymentRequest(`/api/households/me/payments/${encodeURIComponent(btn.dataset.id)}`, "DELETE")) {
+    paymentStatus("Payment deleted.", false);
+    loadPayments();
+    loadBalance();
+  }
+});
+
+// A suggested transfer pre-fills the form; recording stays a deliberate click.
+els.settlementBody.addEventListener("click", (e) => {
+  const btn = e.target.closest(".pay-suggestion");
+  if (!btn) return;
+  els.paymentPayer.value = btn.dataset.payer;
+  els.paymentPayee.value = btn.dataset.payee;
+  els.paymentAmount.value = Number(btn.dataset.amount).toFixed(2);
+  els.paymentDate.value = today();
+  els.paymentNote.value = "";
+  paymentStatus("", false);
+  els.paymentsPanel.scrollIntoView({ behavior: "smooth" });
+  els.paymentAmount.focus();
+});
 
 // --- tabs and settlement controls ------------------------------------------
 
