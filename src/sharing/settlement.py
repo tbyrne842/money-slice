@@ -9,11 +9,12 @@ current "who owes what" - but it applies today's shares to all past
 spend, so if shares or membership change, start a new period from that
 date (--start / ?start=) rather than trusting the all-time figure.
 
-Settle-up payments: until explicit "A paid B" recording arrives (a later
-phase), a transfer between members is recognised by the category
-"partner_contribution". That only identifies the recipient when the
-household has exactly two members, so in larger households those rows
-are ignored and counted in `unattributed_settle_ups` instead.
+Settle-up payments are explicit records in the `settle_ups` collection
+(see payments.py): "payer paid payee £x on a date". Each one moves both
+people's balances, so it works for any household size. Bank transactions
+categorised "partner_contribution" no longer affect the balance - they're
+just personal transfers - and payments involving someone who has since
+left the household are ignored.
 
 Usage:
     python -m sharing.settlement --user tiarnan
@@ -26,7 +27,10 @@ from datetime import date
 from db.mongo import get_db
 from households import get_household, member_shares
 
-SETTLE_UP_CATEGORY = "partner_contribution"
+# Bank rows in this category are transfers between household members. They
+# are never counted as shared spend, but they don't settle anything either:
+# settling up is recorded explicitly (payments.py).
+TRANSFER_CATEGORY = "partner_contribution"
 
 
 def _date_filter(start: date | None, end: date | None) -> dict | None:
@@ -65,7 +69,10 @@ def calculate_settlement(
     shares: dict[str, float],
     start: date | None = None,
     end: date | None = None,
+    household_id=None,
+    payments: list[dict] | None = None,
 ) -> dict:
+    """`payments` overrides the stored settle-ups (used to preview a migration)."""
     members = list(shares)
     date_filter = _date_filter(start, end)
 
@@ -73,10 +80,10 @@ def calculate_settlement(
     spend_query: dict = {
         "is_shared": True,
         "owner": {"$in": members},
-        # Defensive: a settle-up should always be is_shared: False per
-        # sharing_defaults.yaml, but if one ever gets mis-flagged this
-        # stops it being counted both as spend and as a settle-up.
-        "category": {"$ne": SETTLE_UP_CATEGORY},
+        # Defensive: transfers between members should always be
+        # is_shared: False per sharing_defaults.yaml, but if one ever gets
+        # mis-flagged this stops it being counted as joint spend.
+        "category": {"$ne": TRANSFER_CATEGORY},
     }
     if date_filter:
         spend_query["date"] = date_filter
@@ -89,25 +96,21 @@ def calculate_settlement(
     total_shared = sum(paid.values())
     fair_share = {u: total_shared * shares[u] for u in members}
 
-    # --- settle-up payments between the two members of a two-person household ---
-    # Only the outgoing leg counts (amount < 0), so a transfer imported from
-    # both statements is never counted twice.
+    # --- recorded settle-up payments ---
+    if payments is None:
+        payments = []
+        if household_id is not None:
+            query: dict = {"household_id": household_id}
+            if date_filter:
+                query["date"] = date_filter
+            payments = list(db.settle_ups.find(query))
+
     sent = {u: 0.0 for u in members}
     received = {u: 0.0 for u in members}
-    unattributed = 0
-
-    settle_query: dict = {"category": SETTLE_UP_CATEGORY, "owner": {"$in": members}, "amount": {"$lt": 0}}
-    if date_filter:
-        settle_query["date"] = date_filter
-
-    for txn in db.transactions.find(settle_query):
-        if len(members) != 2:
-            unattributed += 1
-            continue
-        sender = txn["owner"]
-        recipient = next(u for u in members if u != sender)
-        sent[sender] += abs(txn["amount"])
-        received[recipient] += abs(txn["amount"])
+    for payment in payments:
+        if payment["payer"] in sent and payment["payee"] in received:
+            sent[payment["payer"]] += payment["amount"]
+            received[payment["payee"]] += payment["amount"]
 
     # Positive = is owed money (paid more than their fair share); negative =
     # owes the pot. Sending a settle-up moves you towards zero, receiving one
@@ -132,7 +135,6 @@ def calculate_settlement(
         "settled_received": rounded(received),
         "balance": rounded(balance),
         "transfers": transfers,
-        "unattributed_settle_ups": unattributed,
         "settlement_text": settlement_text,
     }
 
@@ -152,7 +154,9 @@ def main():
     if household is None:
         raise SystemExit(f"'{args.user}' is not in a household.")
 
-    result = calculate_settlement(db, member_shares(household), start=start, end=end)
+    result = calculate_settlement(
+        db, member_shares(household), start=start, end=end, household_id=household["_id"]
+    )
 
     print(f"Household: {household['name']}")
     print(f"Total shared spend: £{result['total_shared']}")
@@ -161,8 +165,6 @@ def main():
             f"  {user}: share {share:.0%}, paid £{result['paid_by_member'][user]}, "
             f"fair share £{result['fair_share'][user]}, balance £{result['balance'][user]}"
         )
-    if result["unattributed_settle_ups"]:
-        print(f"Ignored {result['unattributed_settle_ups']} settle-up payment(s): recipient unknown in a 3+ person household")
     print(f"\n{result['settlement_text']}")
 
 

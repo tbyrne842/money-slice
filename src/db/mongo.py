@@ -31,6 +31,7 @@ def ensure_indexes(db: Database) -> None:
     db.transactions.create_index([("owner", ASCENDING)])
     db.households.create_index([("invite_code", ASCENDING)], unique=True)
     db.households.create_index([("members.username", ASCENDING)])
+    db.settle_ups.create_index([("household_id", ASCENDING), ("date", ASCENDING)])
     db.accounts.create_index([("id", ASCENDING)], unique=True)
 
 
