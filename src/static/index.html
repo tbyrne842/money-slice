@@ -215,6 +215,38 @@
       </p>
       <div id="settlement-body"></div>
     </section>
+
+    <section class="upload-panel" id="payments-panel" hidden>
+      <h2>Settle up</h2>
+      <form id="payment-form" class="filters-grid">
+        <div class="field">
+          <label for="payment-payer">Paid by</label>
+          <select id="payment-payer"></select>
+        </div>
+        <div class="field">
+          <label for="payment-payee">Paid to</label>
+          <select id="payment-payee"></select>
+        </div>
+        <div class="field">
+          <label for="payment-amount">Amount (&pound;)</label>
+          <input type="number" id="payment-amount" min="0.01" step="0.01" required />
+        </div>
+        <div class="field">
+          <label for="payment-date">Date</label>
+          <input type="date" id="payment-date" required />
+        </div>
+        <div class="field">
+          <label for="payment-note">Note</label>
+          <input type="text" id="payment-note" maxlength="200" />
+        </div>
+        <div class="field">
+          <label>&nbsp;</label>
+          <button type="submit">Record payment</button>
+        </div>
+      </form>
+      <p id="payment-status" class="household-status"></p>
+      <div id="payments-body"></div>
+    </section>
   </main>
 
   <script src="/app.js"></script>

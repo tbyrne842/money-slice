@@ -13,8 +13,8 @@ def shared(owner, amount, day="2026-08-01", **extra):
     return {"owner": owner, "amount": amount, "is_shared": True, "date": day, **extra}
 
 
-def settle_up(owner, amount, day="2026-08-05"):
-    return {"owner": owner, "amount": amount, "is_shared": False, "category": "partner_contribution", "date": day}
+def payment(payer, payee, amount, day="2026-08-05", household_id="h1"):
+    return {"household_id": household_id, "payer": payer, "payee": payee, "amount": amount, "date": day}
 
 
 def test_even_split_when_both_paid_equally(mongo_db):
@@ -109,60 +109,94 @@ def test_row_without_owner_is_ignored(mongo_db):
     assert calculate_settlement(mongo_db, PAIR)["total_shared"] == 0.0
 
 
-# --- settle-up payments (two-person households) ---------------------------
+# --- recorded settle-up payments -------------------------------------------
 
-def test_settle_up_from_the_debtor_reduces_what_they_owe(mongo_db):
-    mongo_db.transactions.insert_many([shared("deirbhile", -200.0), settle_up("tiarnan", -60.0)])
+def test_payment_from_the_debtor_reduces_what_they_owe(mongo_db):
+    mongo_db.transactions.insert_one(shared("deirbhile", -200.0))
+    mongo_db.settle_ups.insert_one(payment("tiarnan", "deirbhile", 60.0))
 
-    result = calculate_settlement(mongo_db, PAIR)
+    result = calculate_settlement(mongo_db, PAIR, household_id="h1")
 
     assert result["settled_sent"]["tiarnan"] == 60.0
     assert result["settled_received"]["deirbhile"] == 60.0
     assert result["balance"] == {"tiarnan": -40.0, "deirbhile": 40.0}  # owed £100, paid £60
 
 
-def test_settle_up_in_full_clears_the_balance(mongo_db):
-    mongo_db.transactions.insert_many([shared("tiarnan", -200.0), settle_up("deirbhile", -100.0)])
+def test_payment_in_full_clears_the_balance(mongo_db):
+    mongo_db.transactions.insert_one(shared("tiarnan", -200.0))
+    mongo_db.settle_ups.insert_one(payment("deirbhile", "tiarnan", 100.0))
 
-    result = calculate_settlement(mongo_db, PAIR)
+    result = calculate_settlement(mongo_db, PAIR, household_id="h1")
 
     assert result["balance"] == {"tiarnan": 0.0, "deirbhile": 0.0}
     assert result["settlement_text"] == "Already settled - nothing owed either way"
 
 
-def test_settle_up_overpayment_flips_who_is_owed(mongo_db):
-    mongo_db.transactions.insert_many([shared("deirbhile", -200.0), settle_up("tiarnan", -150.0)])
+def test_overpayment_flips_who_is_owed(mongo_db):
+    mongo_db.transactions.insert_one(shared("deirbhile", -200.0))
+    mongo_db.settle_ups.insert_one(payment("tiarnan", "deirbhile", 150.0))
 
-    result = calculate_settlement(mongo_db, PAIR)
+    result = calculate_settlement(mongo_db, PAIR, household_id="h1")
 
     assert result["balance"] == {"tiarnan": 50.0, "deirbhile": -50.0}
     assert result["settlement_text"] == "deirbhile owes tiarnan £50.00"
 
 
-def test_incoming_mirrored_settle_up_leg_is_not_double_counted(mongo_db):
-    mirrored = {**settle_up("deirbhile", 60.0)}  # credit leg of the same transfer
-    mongo_db.transactions.insert_many([shared("deirbhile", -200.0), settle_up("tiarnan", -60.0), mirrored])
+def test_payments_work_in_larger_households(mongo_db):
+    mongo_db.transactions.insert_many([shared("a", -300.0)])
+    mongo_db.settle_ups.insert_one(payment("b", "a", 100.0))
 
-    result = calculate_settlement(mongo_db, PAIR)
+    result = calculate_settlement(mongo_db, {"a": 1 / 3, "b": 1 / 3, "c": 1 / 3}, household_id="h1")
 
-    assert result["settled_sent"]["tiarnan"] == 60.0  # not 120.0
-    assert result["balance"]["tiarnan"] == -40.0
-
-
-def test_mis_flagged_shared_settle_up_is_not_counted_as_spend(mongo_db):
-    mongo_db.transactions.insert_one({**settle_up("tiarnan", -60.0), "is_shared": True})
-
-    result = calculate_settlement(mongo_db, PAIR)
-
-    assert result["total_shared"] == 0.0
-    assert result["settled_sent"]["tiarnan"] == 60.0
+    assert result["balance"] == {"a": 100.0, "b": 0.0, "c": -100.0}
+    assert result["transfers"] == [{"from": "c", "to": "a", "amount": 100.0}]
+    assert round(sum(result["balance"].values()), 2) == 0
 
 
-def test_settle_ups_are_ignored_but_counted_in_larger_households(mongo_db):
-    mongo_db.transactions.insert_many([shared("a", -300.0), settle_up("b", -50.0)])
+def test_only_this_households_payments_count(mongo_db):
+    mongo_db.transactions.insert_one(shared("tiarnan", -200.0))
+    mongo_db.settle_ups.insert_many([payment("deirbhile", "tiarnan", 100.0, household_id="other")])
 
-    result = calculate_settlement(mongo_db, {"a": 1 / 3, "b": 1 / 3, "c": 1 / 3})
+    assert calculate_settlement(mongo_db, PAIR, household_id="h1")["balance"]["tiarnan"] == 100.0
+    assert calculate_settlement(mongo_db, PAIR)["balance"]["tiarnan"] == 100.0  # no household_id: no payments
 
-    assert result["unattributed_settle_ups"] == 1
-    assert result["settled_sent"] == {"a": 0.0, "b": 0.0, "c": 0.0}
-    assert result["balance"] == {"a": 200.0, "b": -100.0, "c": -100.0}
+
+def test_payments_involving_former_members_are_ignored(mongo_db):
+    mongo_db.transactions.insert_one(shared("tiarnan", -200.0))
+    mongo_db.settle_ups.insert_one(payment("gone", "tiarnan", 100.0))
+
+    result = calculate_settlement(mongo_db, PAIR, household_id="h1")
+
+    assert result["balance"] == {"tiarnan": 100.0, "deirbhile": -100.0}
+
+
+def test_date_range_applies_to_payments_too(mongo_db):
+    mongo_db.transactions.insert_one(shared("tiarnan", -200.0, "2026-08-10"))
+    mongo_db.settle_ups.insert_many(
+        [payment("deirbhile", "tiarnan", 40.0, "2026-07-20"), payment("deirbhile", "tiarnan", 60.0, "2026-08-20")]
+    )
+
+    result = calculate_settlement(
+        mongo_db, PAIR, start=date(2026, 8, 1), end=date(2026, 8, 31), household_id="h1"
+    )
+
+    assert result["settled_sent"]["deirbhile"] == 60.0
+
+
+def test_bank_transfer_rows_no_longer_settle_anything(mongo_db):
+    mongo_db.transactions.insert_one(shared("deirbhile", -200.0))
+    mongo_db.transactions.insert_one(
+        {"owner": "tiarnan", "amount": -60.0, "is_shared": False, "category": "partner_contribution", "date": "2026-08-05"}
+    )
+
+    result = calculate_settlement(mongo_db, PAIR, household_id="h1")
+
+    assert result["settled_sent"] == {"tiarnan": 0.0, "deirbhile": 0.0}
+    assert result["balance"] == {"tiarnan": -100.0, "deirbhile": 100.0}
+
+
+def test_mis_flagged_shared_transfer_is_not_counted_as_spend(mongo_db):
+    mongo_db.transactions.insert_one(
+        {"owner": "tiarnan", "amount": -60.0, "is_shared": True, "category": "partner_contribution", "date": "2026-08-05"}
+    )
+    assert calculate_settlement(mongo_db, PAIR)["total_shared"] == 0.0

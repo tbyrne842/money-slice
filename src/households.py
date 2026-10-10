@@ -134,6 +134,7 @@ def leave_household(db, username: str) -> None:
     remaining = [m["username"] for m in household["members"] if m["username"] != username]
     if not remaining:
         db.households.delete_one({"_id": household["_id"]})
+        db.settle_ups.delete_many({"household_id": household["_id"]})
         return
     db.households.update_one({"_id": household["_id"]}, {"$set": {"members": _equal_shares(remaining)}})
 
