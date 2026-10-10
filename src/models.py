@@ -6,15 +6,22 @@ objects matching these models. This is the contract that keeps
 ingestion adapters decoupled from everything downstream
 (categorization, household splitting, reporting).
 """
+
 from __future__ import annotations
 
 import hashlib
 import math
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from enum import Enum
-from typing import Literal, Optional
+from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator
+
+
+def _utcnow() -> datetime:
+    """Naive UTC 'now'. Naive on purpose: pymongo returns naive datetimes, so
+    this keeps stored and re-read values comparable (replaces utcnow())."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class AccountOwner(str, Enum):
@@ -29,25 +36,33 @@ class Account(BaseModel):
     bank_name: str
     account_type: str  # "current", "savings", "credit_card"
     currency: str = "GBP"
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
 
 
 class Transaction(BaseModel):
     id: Optional[str] = None  # set to source_hash on save
     account_id: str
-    owner: Optional[str] = None  # username of whoever paid; always set by the import/manual-add entry points
+    owner: Optional[str] = (
+        None  # username of whoever paid; always set by the import/manual-add entry points
+    )
     date: date
     amount: float  # negative = money out, positive = money in
     currency: str = "GBP"
     description_raw: str
     merchant: Optional[str] = None  # cleaned/extracted, filled by categorizer
     category: Optional[str] = None
-    source_category: Optional[str] = None  # provider's own category, if the CSV includes one (e.g. Amex) - kept for reference, not auto-applied to `category`
-    is_shared: Optional[bool] = None  # None = undecided, True/False = decided (by category default or manual edit - once set, bulk scripts never overwrite it)
-    split_ratio: Optional[float] = None  # per-transaction override; None = use whatever ratio you specify when running settlement for that period
+    source_category: Optional[str] = (
+        None  # provider's own category, if the CSV includes one (e.g. Amex) - kept for reference, not auto-applied to `category`
+    )
+    is_shared: Optional[bool] = (
+        None  # None = undecided, True/False = decided (by category default or manual edit - once set, bulk scripts never overwrite it)
+    )
+    split_ratio: Optional[float] = (
+        None  # per-transaction override; None = use whatever ratio you specify when running settlement for that period
+    )
     source: str = "csv"  # "csv" | "gocardless" | "manual"
     source_hash: Optional[str] = None
-    imported_at: datetime = Field(default_factory=datetime.utcnow)
+    imported_at: datetime = Field(default_factory=_utcnow)
 
     @field_validator("description_raw")
     @classmethod
