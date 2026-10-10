@@ -52,6 +52,7 @@ const els = {
   uploadSubmit: document.getElementById("upload-submit"),
   uploadStatus: document.getElementById("upload-status"),
   uploadResult: document.getElementById("upload-result"),
+  importStatus: document.getElementById("import-status"),
   toggleAdd: document.getElementById("toggle-add"),
   addForm: document.getElementById("add-form"),
   addDate: document.getElementById("add-date"),
@@ -120,6 +121,37 @@ async function loadMappings() {
     opt.textContent = name;
     els.uploadMapping.appendChild(opt);
   }
+}
+
+// Pre-selects the bank mapping used last time and warns about banks whose
+// data stops long ago. Runs after loadMappings() so the options exist.
+async function loadImportStatus() {
+  let status;
+  try {
+    const res = await fetch("/api/import/status");
+    if (!res.ok) return;
+    status = await res.json();
+  } catch (err) {
+    return; // the warning is a nicety - never block the page on it
+  }
+
+  if (status.last_mapping && [...els.uploadMapping.options].some((o) => o.value === status.last_mapping)) {
+    els.uploadMapping.value = status.last_mapping;
+  }
+
+  const stale = status.banks.filter((b) => b.stale);
+  if (!stale.length) {
+    els.importStatus.hidden = true;
+    return;
+  }
+  const items = stale
+    .map((b) => {
+      const latest = b.latest_data_date ? `latest transaction ${esc(b.latest_data_date)}` : "no transactions imported";
+      return `<li><strong>${esc(b.mapping)}</strong>: ${latest} (${b.days_since_data} days ago)</li>`;
+    })
+    .join("");
+  els.importStatus.innerHTML = `<div>Time for a new statement? Data looks out of date for:</div><ul>${items}</ul>`;
+  els.importStatus.hidden = false;
 }
 
 async function loadBalance() {
@@ -531,7 +563,7 @@ async function startApp() {
   currentUser = username;
   authEls.userName.textContent = username;
   authEls.userMenu.hidden = false;
-  loadMappings();
+  loadMappings().then(loadImportStatus);
   // The household decides the default view, so it loads before the table does.
   await loadHousehold();
   loadFilters().then(loadTransactions);
@@ -554,10 +586,27 @@ function renderUploadResult(summary, isError) {
     return;
   }
 
-  els.uploadResult.innerHTML = `
-    <div>${summary.inserted} inserted, ${summary.duplicates} duplicates skipped</div>
-    <div>${summary.categorised} categorised, ${summary.still_uncategorised} still uncategorised</div>
-  `;
+  const lines = [];
+  const range = summary.date_from ? ` (rows dated ${esc(summary.date_from)} to ${esc(summary.date_to)})` : "";
+  lines.push(`<div><strong>${summary.inserted} new</strong> of ${summary.rows_in_file} rows in the file${range}</div>`);
+  lines.push(`<div>${summary.already_imported} already imported</div>`);
+  if (summary.repeated_in_file) {
+    lines.push(
+      `<div>${summary.repeated_in_file} identical row(s) within this file were skipped as repeats. ` +
+        `If they are genuine repeat purchases, add them with Add transaction.</div>`
+    );
+  }
+  if (summary.skipped_no_amount) {
+    lines.push(`<div>${summary.skipped_no_amount} row(s) with no amount skipped (e.g. a balance line)</div>`);
+  }
+  lines.push(`<div>${summary.categorised} categorised, ${summary.still_uncategorised} still uncategorised</div>`);
+  if (summary.new_preview.length) {
+    const rows = summary.new_preview
+      .map((t) => `<li>${esc(t.date)} &middot; ${esc(t.description)} &middot; ${money(t.amount)}</li>`)
+      .join("");
+    lines.push(`<div>Newest new rows:</div><ul>${rows}</ul>`);
+  }
+  els.uploadResult.innerHTML = lines.join("");
 }
 
 els.uploadForm.addEventListener("submit", async (e) => {
@@ -586,6 +635,7 @@ els.uploadForm.addEventListener("submit", async (e) => {
       els.uploadForm.reset();
       els.uploadSource.value = "csv";
       await loadMappings();
+      await loadImportStatus();
       await loadFilters();
       resetAndReload();
       loadBalance();

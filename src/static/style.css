@@ -421,6 +421,16 @@ td.amount-col.positive {
   color: var(--shared-text);
 }
 
+.upload-result.warning {
+  background: #fdf3e1;
+  color: #8a5a00;
+}
+
+.upload-result ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
 .upload-result.error {
   background: #fbeae8;
   color: var(--negative);
