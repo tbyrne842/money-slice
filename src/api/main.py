@@ -32,7 +32,13 @@ import sharing.apply_defaults as apply_defaults_module
 from auth import AccountLocked, authenticate, create_user, current_user
 from api.queries import list_distinct_accounts, list_distinct_categories, query_transactions
 from db.mongo import get_db
-from ingestion.csv_importer import list_mapping_names, parse_csv, save_transactions
+from ingestion.csv_importer import (
+    list_mapping_names,
+    parse_csv_detailed,
+    save_transactions,
+    save_transactions_detailed,
+)
+from ingestion.import_log import import_status, record_import
 from models import Transaction
 from households import (
     HouseholdError,
@@ -314,27 +320,44 @@ async def import_csv(
         tmp_path = tmp.name
 
     try:
-        transactions = parse_csv(tmp_path, user, mapping, owner=user)
+        parsed = parse_csv_detailed(tmp_path, user, mapping, owner=user)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     finally:
         Path(tmp_path).unlink(missing_ok=True)
 
-    for txn in transactions:
+    for txn in parsed.transactions:
         txn.source = source
 
     db = get_db()
-    inserted, duplicates = save_transactions(transactions, db=db)
+    saved = save_transactions_detailed(parsed.transactions, db=db)
     matched, unmatched = categorisation_rules.run(db=db)
     sharing_result = apply_defaults_module.apply_defaults(db)
+    record_import(db, user, mapping, source, parsed, saved)
 
+    newest_new = sorted(saved.new_transactions, key=lambda t: t.date, reverse=True)[:5]
     return {
-        "inserted": inserted,
-        "duplicates": duplicates,
+        "inserted": saved.inserted,
+        "duplicates": saved.duplicates,
         "categorised": matched,
         "still_uncategorised": unmatched,
         "sharing": sharing_result,
+        "rows_in_file": parsed.rows_in_file,
+        "skipped_no_amount": parsed.skipped_no_amount,
+        "already_imported": saved.already_imported,
+        "repeated_in_file": saved.repeated_in_file,
+        "date_from": parsed.date_from.isoformat() if parsed.date_from else None,
+        "date_to": parsed.date_to.isoformat() if parsed.date_to else None,
+        "new_preview": [
+            {"date": t.date.isoformat(), "description": t.description_raw, "amount": t.amount}
+            for t in newest_new
+        ],
     }
+
+
+@app.get("/api/import/status")
+def get_import_status(user: str = Depends(current_user)) -> dict:
+    return import_status(get_db(), user)
 
 
 class ManualTransactionIn(BaseModel):

@@ -166,6 +166,13 @@ def test_upload_runs_full_pipeline(client, fixture_path):
         "categorised",
         "still_uncategorised",
         "sharing",
+        "rows_in_file",
+        "skipped_no_amount",
+        "already_imported",
+        "repeated_in_file",
+        "date_from",
+        "date_to",
+        "new_preview",
     }
     assert db.transactions.count_documents({}) == 2
 

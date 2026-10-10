@@ -7,7 +7,7 @@ stops being correct).
 """
 import os
 
-from pymongo import ASCENDING, MongoClient
+from pymongo import ASCENDING, DESCENDING, MongoClient
 from pymongo.database import Database
 
 DEFAULT_URI = "mongodb://localhost:27017"
@@ -32,6 +32,7 @@ def ensure_indexes(db: Database) -> None:
     db.households.create_index([("invite_code", ASCENDING)], unique=True)
     db.households.create_index([("members.username", ASCENDING)])
     db.settle_ups.create_index([("household_id", ASCENDING), ("date", ASCENDING)])
+    db.import_log.create_index([("user", ASCENDING), ("at", DESCENDING)])
     db.accounts.create_index([("id", ASCENDING)], unique=True)
 
 
