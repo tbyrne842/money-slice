@@ -591,9 +591,17 @@ function renderUploadResult(summary, isError) {
   lines.push(`<div><strong>${summary.inserted} new</strong> of ${summary.rows_in_file} rows in the file${range}</div>`);
   lines.push(`<div>${summary.already_imported} already imported</div>`);
   if (summary.repeated_in_file) {
+    const repeats = (summary.repeated_rows || [])
+      .map(
+        (r) =>
+          `<li>${esc(r.date)} &middot; ${esc(r.description)} &middot; ${money(r.amount)} ` +
+          `(appears ${r.extra_copies + 1} times in the file, imported once)</li>`
+      )
+      .join("");
     lines.push(
-      `<div>${summary.repeated_in_file} identical row(s) within this file were skipped as repeats. ` +
-        `If they are genuine repeat purchases, add them with Add transaction.</div>`
+      `<div>${summary.repeated_in_file} extra row(s) matched another row exactly (same date, amount and ` +
+        `description) and were not imported. Check your statement: if any are genuine repeat purchases, ` +
+        `they are missing from your totals, and Add transaction will reject them too.</div><ul>${repeats}</ul>`
     );
   }
   if (summary.skipped_no_amount) {

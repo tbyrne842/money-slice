@@ -186,3 +186,18 @@ def test_save_transactions_tuple_total_matches_detailed_duplicates(mongo_db):
     twin = txn.model_copy()
 
     assert save_transactions([txn, twin]) == (1, 1)
+
+
+def test_save_detailed_lists_which_rows_were_repeated_and_how_many_copies(mongo_db):
+    def txn(day, desc):
+        return Transaction(
+            account_id="acct", owner="tiarnan", date=date(2026, 9, day), amount=-2.5, description_raw=desc
+        ).finalize()
+
+    result = save_transactions_detailed([txn(2, "B"), txn(2, "B"), txn(2, "B"), txn(1, "A"), txn(1, "A"), txn(3, "C")])
+
+    assert result.repeated_in_file == 3
+    assert result.repeated_rows == [
+        {"date": "2026-09-01", "description": "A", "amount": -2.5, "extra_copies": 1},
+        {"date": "2026-09-02", "description": "B", "amount": -2.5, "extra_copies": 2},
+    ]

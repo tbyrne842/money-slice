@@ -145,6 +145,7 @@ class SaveResult:
     inserted: int = 0
     already_imported: int = 0  # hash already in the database from an earlier import
     repeated_in_file: int = 0  # same hash earlier in this same file (see note below)
+    repeated_rows: list[dict] = field(default_factory=list)  # which rows, with extra_copies skipped
     new_transactions: list[Transaction] = field(default_factory=list)
 
     @property
@@ -167,9 +168,20 @@ def save_transactions_detailed(transactions: list[Transaction], db=None) -> Save
 
     result = SaveResult()
     seen_in_file: set[str] = set()
+    repeats: dict[str, dict] = {}
     for txn in transactions:
         if txn.source_hash in seen_in_file:
             result.repeated_in_file += 1
+            row = repeats.setdefault(
+                txn.source_hash,
+                {
+                    "date": txn.date.isoformat(),
+                    "description": txn.description_raw,
+                    "amount": txn.amount,
+                    "extra_copies": 0,
+                },
+            )
+            row["extra_copies"] += 1
             continue
         seen_in_file.add(txn.source_hash)
         try:
@@ -179,6 +191,7 @@ def save_transactions_detailed(transactions: list[Transaction], db=None) -> Save
         except DuplicateKeyError:
             result.already_imported += 1  # already imported - expected on re-runs
 
+    result.repeated_rows = sorted(repeats.values(), key=lambda r: (r["date"], r["description"]))
     return result
 
 

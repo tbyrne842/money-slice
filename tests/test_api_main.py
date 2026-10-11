@@ -170,6 +170,7 @@ def test_upload_runs_full_pipeline(client, fixture_path):
         "skipped_no_amount",
         "already_imported",
         "repeated_in_file",
+        "repeated_rows",
         "date_from",
         "date_to",
         "new_preview",

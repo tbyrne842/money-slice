@@ -80,6 +80,9 @@ def test_upload_flags_identical_rows_repeated_within_one_file(client, tmp_path):
     assert body["inserted"] == 1
     assert body["repeated_in_file"] == 1
     assert body["already_imported"] == 0
+    assert body["repeated_rows"] == [
+        {"date": "2026-09-01", "description": "COFFEE SHOP", "amount": -2.5, "extra_copies": 1}
+    ]
 
 
 # --- import status ------------------------------------------------------------

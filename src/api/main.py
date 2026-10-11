@@ -346,6 +346,7 @@ async def import_csv(
         "skipped_no_amount": parsed.skipped_no_amount,
         "already_imported": saved.already_imported,
         "repeated_in_file": saved.repeated_in_file,
+        "repeated_rows": saved.repeated_rows[:50],
         "date_from": parsed.date_from.isoformat() if parsed.date_from else None,
         "date_to": parsed.date_to.isoformat() if parsed.date_to else None,
         "new_preview": [
