@@ -590,18 +590,18 @@ function renderUploadResult(summary, isError) {
   const range = summary.date_from ? ` (rows dated ${esc(summary.date_from)} to ${esc(summary.date_to)})` : "";
   lines.push(`<div><strong>${summary.inserted} new</strong> of ${summary.rows_in_file} rows in the file${range}</div>`);
   lines.push(`<div>${summary.already_imported} already imported</div>`);
-  if (summary.repeated_in_file) {
-    const repeats = (summary.repeated_rows || [])
+  if (summary.identical_extra_rows) {
+    const groups = (summary.identical_rows || [])
       .map(
         (r) =>
           `<li>${esc(r.date)} &middot; ${esc(r.description)} &middot; ${money(r.amount)} ` +
-          `(appears ${r.extra_copies + 1} times in the file, imported once)</li>`
+          `(${r.copies} identical rows in the file)</li>`
       )
       .join("");
     lines.push(
-      `<div>${summary.repeated_in_file} extra row(s) matched another row exactly (same date, amount and ` +
-        `description) and were not imported. Check your statement: if any are genuine repeat purchases, ` +
-        `they are missing from your totals, and Add transaction will reject them too.</div><ul>${repeats}</ul>`
+      `<div>${summary.identical_extra_rows} extra row(s) matched another row exactly (same date, amount and ` +
+        `description). Each was imported as a separate purchase. Check your statement: if the bank listed a ` +
+        `row twice by mistake, untick Shared on the extra one.</div><ul>${groups}</ul>`
     );
   }
   if (summary.skipped_no_amount) {
