@@ -169,6 +169,7 @@ def test_upload_runs_full_pipeline(client, fixture_path):
         "rows_in_file",
         "skipped_no_amount",
         "already_imported",
+        "previously_deleted",
         "identical_extra_rows",
         "identical_rows",
         "date_from",
