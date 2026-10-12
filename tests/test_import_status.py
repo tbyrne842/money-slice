@@ -40,7 +40,7 @@ def test_upload_summary_reports_rows_dates_and_new_preview(client, fixture_path)
     assert body["rows_in_file"] == 2
     assert body["skipped_no_amount"] == 0
     assert body["already_imported"] == 0
-    assert body["repeated_in_file"] == 0
+    assert body["identical_extra_rows"] == 0
     assert body["date_from"] == "2026-08-15"
     assert body["date_to"] == "2026-08-20"
     assert [p["date"] for p in body["new_preview"]] == ["2026-08-20", "2026-08-15"]  # newest first
@@ -67,22 +67,27 @@ def test_reupload_summary_counts_everything_as_already_imported(client, fixture_
     assert body["new_preview"] == []
 
 
-def test_upload_flags_identical_rows_repeated_within_one_file(client, tmp_path):
-    test_client, _ = client
+def test_upload_imports_identical_rows_as_separate_purchases_and_lists_them(client, tmp_path):
+    test_client, db = client
     csv = tmp_path / "repeat.csv"
     csv.write_text(
         "Date,Description,Debit Amount,Credit Amount\n"
         "01/09/2026,COFFEE SHOP,2.50,\n"
         "01/09/2026,COFFEE SHOP,2.50,\n"
+        "02/09/2026,BUS,1.80,\n"
     )
     body = upload(test_client, str(csv)).json()
 
-    assert body["inserted"] == 1
-    assert body["repeated_in_file"] == 1
+    assert body["inserted"] == 3
     assert body["already_imported"] == 0
-    assert body["repeated_rows"] == [
-        {"date": "2026-09-01", "description": "COFFEE SHOP", "amount": -2.5, "extra_copies": 1}
+    assert body["identical_extra_rows"] == 1
+    assert body["identical_rows"] == [
+        {"date": "2026-09-01", "description": "COFFEE SHOP", "amount": -2.5, "copies": 2}
     ]
+    assert db.transactions.count_documents({"description_raw": "COFFEE SHOP"}) == 2
+
+    again = upload(test_client, str(csv)).json()
+    assert (again["inserted"], again["already_imported"]) == (0, 3)
 
 
 # --- import status ------------------------------------------------------------
