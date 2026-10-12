@@ -6,7 +6,15 @@ is added, add a matching fixture CSV under tests/fixtures/ and a test
 here - that's what catches sign-convention or date-format mistakes
 before a real import does.
 """
-from ingestion.csv_importer import parse_csv, save_transactions
+from datetime import date
+
+from ingestion.csv_importer import (
+    parse_csv,
+    parse_csv_detailed,
+    save_transactions,
+    save_transactions_detailed,
+)
+from models import Transaction
 
 
 def test_generic_uk_debit_credit_signs_debit_negative_and_credit_positive(fixture_path):
@@ -131,3 +139,65 @@ def test_unknown_mapping_name_raises_a_clear_error(fixture_path):
 
     with pytest.raises(ValueError, match="No mapping 'not_a_real_bank'"):
         parse_csv(fixture_path("natwest.csv"), "test-natwest", "not_a_real_bank")
+
+
+# --- detailed results (Phase 10) -----------------------------------------
+
+def test_parse_csv_detailed_counts_rows_skipped_and_date_range(fixture_path):
+    result = parse_csv_detailed(fixture_path("natwest_with_balance_row.csv"), "test-natwest", "natwest")
+
+    assert len(result.transactions) == 2
+    assert result.skipped_no_amount == 1
+    assert result.rows_in_file == 3
+    assert result.date_from == min(t.date for t in result.transactions)
+    assert result.date_to == max(t.date for t in result.transactions)
+
+
+def test_parse_csv_detailed_date_range_is_none_for_no_rows(tmp_path):
+    empty = tmp_path / "empty.csv"
+    empty.write_text("Date,Description,Debit Amount,Credit Amount\n")
+    result = parse_csv_detailed(str(empty), "acct", "generic_uk_debit_credit")
+
+    assert result.transactions == []
+    assert result.date_from is None
+    assert result.date_to is None
+
+
+def test_save_detailed_separates_already_imported_from_repeated_in_file(mongo_db):
+    def coffee():
+        return Transaction(
+            account_id="acct", owner="tiarnan", date=date(2026, 9, 1), amount=-2.5, description_raw="COFFEE SHOP"
+        ).finalize()
+
+    first = save_transactions_detailed([coffee(), coffee()])
+    assert (first.inserted, first.already_imported, first.repeated_in_file) == (1, 0, 1)
+    assert first.duplicates == 1
+    assert len(first.new_transactions) == 1
+
+    again = save_transactions_detailed([coffee()])
+    assert (again.inserted, again.already_imported, again.repeated_in_file) == (0, 1, 0)
+    assert mongo_db.transactions.count_documents({}) == 1
+
+
+def test_save_transactions_tuple_total_matches_detailed_duplicates(mongo_db):
+    txn = Transaction(
+        account_id="acct", owner="tiarnan", date=date(2026, 9, 1), amount=-1.0, description_raw="X"
+    ).finalize()
+    twin = txn.model_copy()
+
+    assert save_transactions([txn, twin]) == (1, 1)
+
+
+def test_save_detailed_lists_which_rows_were_repeated_and_how_many_copies(mongo_db):
+    def txn(day, desc):
+        return Transaction(
+            account_id="acct", owner="tiarnan", date=date(2026, 9, day), amount=-2.5, description_raw=desc
+        ).finalize()
+
+    result = save_transactions_detailed([txn(2, "B"), txn(2, "B"), txn(2, "B"), txn(1, "A"), txn(1, "A"), txn(3, "C")])
+
+    assert result.repeated_in_file == 3
+    assert result.repeated_rows == [
+        {"date": "2026-09-01", "description": "A", "amount": -2.5, "extra_copies": 1},
+        {"date": "2026-09-02", "description": "B", "amount": -2.5, "extra_copies": 2},
+    ]

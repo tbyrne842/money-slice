@@ -14,7 +14,8 @@ No code changes needed unless a bank does something genuinely unusual
 keeping mapping declarative.
 """
 import argparse
-from datetime import datetime
+from dataclasses import dataclass, field
+from datetime import date, datetime
 from pathlib import Path
 
 import pandas as pd
@@ -75,7 +76,22 @@ def row_to_amount(row: pd.Series, mapping: dict) -> float:
     return 0.0
 
 
-def parse_csv(file_path: str, account_id: str, mapping_name: str, owner: str | None = None) -> list[Transaction]:
+@dataclass
+class ParseResult:
+    transactions: list[Transaction]
+    rows_in_file: int
+    skipped_no_amount: int
+
+    @property
+    def date_from(self) -> date | None:
+        return min((t.date for t in self.transactions), default=None)
+
+    @property
+    def date_to(self) -> date | None:
+        return max((t.date for t in self.transactions), default=None)
+
+
+def parse_csv_detailed(file_path: str, account_id: str, mapping_name: str, owner: str | None = None) -> ParseResult:
     mapping = load_mapping(mapping_name)
     df = pd.read_csv(file_path)
 
@@ -108,16 +124,75 @@ def parse_csv(file_path: str, account_id: str, mapping_name: str, owner: str | N
         ).finalize()
         transactions.append(txn)
 
-    if skipped_no_amount:
-        print(f"Skipped {skipped_no_amount} row(s) with no amount (e.g. a trailing balance summary row).")
+    return ParseResult(transactions, rows_in_file=len(df), skipped_no_amount=skipped_no_amount)
 
-    return transactions
+
+def parse_csv(file_path: str, account_id: str, mapping_name: str, owner: str | None = None) -> list[Transaction]:
+    result = parse_csv_detailed(file_path, account_id, mapping_name, owner=owner)
+    if result.skipped_no_amount:
+        print(f"Skipped {result.skipped_no_amount} row(s) with no amount (e.g. a trailing balance summary row).")
+    return result.transactions
 
 
 def list_mapping_names() -> list[str]:
     with open(MAPPINGS_PATH) as f:
         mappings = yaml.safe_load(f)
     return sorted(mappings.keys())
+
+
+@dataclass
+class SaveResult:
+    inserted: int = 0
+    already_imported: int = 0  # hash already in the database from an earlier import
+    repeated_in_file: int = 0  # same hash earlier in this same file (see note below)
+    repeated_rows: list[dict] = field(default_factory=list)  # which rows, with extra_copies skipped
+    new_transactions: list[Transaction] = field(default_factory=list)
+
+    @property
+    def duplicates(self) -> int:
+        return self.already_imported + self.repeated_in_file
+
+
+def save_transactions_detailed(transactions: list[Transaction], db=None) -> SaveResult:
+    """Insert transactions, reporting why each non-inserted row was skipped.
+
+    repeated_in_file matters because the dedup hash has no occurrence
+    number: two genuine identical purchases on one day (same account,
+    date, amount and description) share a hash, so the second is dropped.
+    Counting these separately lets the UI flag them instead of hiding them
+    among re-imported rows.
+    """
+    if db is None:
+        db = get_db()
+    ensure_indexes(db)
+
+    result = SaveResult()
+    seen_in_file: set[str] = set()
+    repeats: dict[str, dict] = {}
+    for txn in transactions:
+        if txn.source_hash in seen_in_file:
+            result.repeated_in_file += 1
+            row = repeats.setdefault(
+                txn.source_hash,
+                {
+                    "date": txn.date.isoformat(),
+                    "description": txn.description_raw,
+                    "amount": txn.amount,
+                    "extra_copies": 0,
+                },
+            )
+            row["extra_copies"] += 1
+            continue
+        seen_in_file.add(txn.source_hash)
+        try:
+            db.transactions.insert_one(txn.model_dump(mode="json"))
+            result.inserted += 1
+            result.new_transactions.append(txn)
+        except DuplicateKeyError:
+            result.already_imported += 1  # already imported - expected on re-runs
+
+    result.repeated_rows = sorted(repeats.values(), key=lambda r: (r["date"], r["description"]))
+    return result
 
 
 def save_transactions(transactions: list[Transaction], db=None) -> tuple[int, int]:
@@ -128,19 +203,8 @@ def save_transactions(transactions: list[Transaction], db=None) -> tuple[int, in
     need to patch one get_db in tests. Falls back to get_db() for the
     CLI / existing call sites that don't pass one.
     """
-    if db is None:
-        db = get_db()
-    ensure_indexes(db)
-
-    inserted, duplicates = 0, 0
-    for txn in transactions:
-        try:
-            db.transactions.insert_one(txn.model_dump(mode="json"))
-            inserted += 1
-        except DuplicateKeyError:
-            duplicates += 1  # already imported - expected on re-runs
-
-    return inserted, duplicates
+    result = save_transactions_detailed(transactions, db=db)
+    return result.inserted, result.duplicates
 
 
 def main():
