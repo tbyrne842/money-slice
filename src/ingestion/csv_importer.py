@@ -173,6 +173,7 @@ class SaveResult:
     inserted: int = 0
     already_imported: int = 0  # hash already in the database from an earlier import
     repeated_in_file: int = 0  # same key twice in one batch (CSV parsing numbers repeats, so normally 0)
+    previously_deleted: int = 0  # the user deleted this row earlier; kept deleted on re-import
     new_transactions: list[Transaction] = field(default_factory=list)
 
     @property
@@ -180,11 +181,16 @@ class SaveResult:
         return self.already_imported + self.repeated_in_file
 
 
-def save_transactions_detailed(transactions: list[Transaction], db=None) -> SaveResult:
+def save_transactions_detailed(
+    transactions: list[Transaction], db=None, excluded: set[str] | None = None
+) -> SaveResult:
     """Insert transactions, reporting why each non-inserted row was skipped.
 
     parse_csv_detailed numbers identical rows, so a batch from a CSV has no
     repeated keys. repeated_in_file is a safety net for other callers.
+
+    excluded holds source hashes the user has deleted; those rows are skipped
+    so re-uploading a statement does not bring deleted rows back.
     """
     if db is None:
         db = get_db()
@@ -193,6 +199,9 @@ def save_transactions_detailed(transactions: list[Transaction], db=None) -> Save
     result = SaveResult()
     seen_in_file: set[str] = set()
     for txn in transactions:
+        if excluded and txn.source_hash in excluded:
+            result.previously_deleted += 1
+            continue
         if txn.source_hash in seen_in_file:
             result.repeated_in_file += 1
             continue

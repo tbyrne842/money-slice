@@ -412,6 +412,7 @@ function renderRows(items) {
       <td class="cat-cell">${renderCategoryCell(txn)}</td>
       <td class="shared-cell">${renderSharedCell(txn)}</td>
       <td class="amount-col ${txn.amount < 0 ? "negative" : "positive"}">${formatAmount(txn.amount)}</td>
+      <td>${txn.owner === currentUser ? '<button type="button" class="text-btn delete-txn">Delete</button>' : ""}</td>
     `;
     els.body.appendChild(tr);
   }
@@ -590,6 +591,9 @@ function renderUploadResult(summary, isError) {
   const range = summary.date_from ? ` (rows dated ${esc(summary.date_from)} to ${esc(summary.date_to)})` : "";
   lines.push(`<div><strong>${summary.inserted} new</strong> of ${summary.rows_in_file} rows in the file${range}</div>`);
   lines.push(`<div>${summary.already_imported} already imported</div>`);
+  if (summary.previously_deleted) {
+    lines.push(`<div>${summary.previously_deleted} row(s) skipped because you deleted them earlier</div>`);
+  }
   if (summary.identical_extra_rows) {
     const groups = (summary.identical_rows || [])
       .map(
@@ -600,8 +604,8 @@ function renderUploadResult(summary, isError) {
       .join("");
     lines.push(
       `<div>${summary.identical_extra_rows} extra row(s) matched another row exactly (same date, amount and ` +
-        `description). Each was imported as a separate purchase. Check your statement: if the bank listed a ` +
-        `row twice by mistake, untick Shared on the extra one.</div><ul>${groups}</ul>`
+        `description). They are treated as separate purchases. Check your statement: if the bank listed a ` +
+        `row twice by mistake, delete the extra one from the table.</div><ul>${groups}</ul>`
     );
   }
   if (summary.skipped_no_amount) {
@@ -730,10 +734,34 @@ async function cycleSharedCell(tr, id, currentValue) {
   if (ok) loadTransactions();
 }
 
+async function deleteTransaction(tr, id) {
+  const [date, description] = [...tr.querySelectorAll("td")].slice(0, 2).map((td) => td.textContent);
+  const amount = tr.querySelector(".amount-col").textContent;
+  if (!confirm(`Delete this transaction?\n\n${date} - ${description} - ${amount}\n\nIt stays deleted if you upload the same statement again.`)) return;
+
+  try {
+    const res = await fetch(`/api/transactions/${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      alert(body.detail || "Failed to delete transaction.");
+      return;
+    }
+    loadBalance();
+    loadTransactions();
+  } catch (err) {
+    alert("Couldn't reach the server.");
+  }
+}
+
 els.body.addEventListener("click", (e) => {
   const tr = e.target.closest("tr");
   if (!tr || tr.classList.contains("readonly")) return;
   const id = tr.dataset.id;
+
+  if (e.target.closest(".delete-txn")) {
+    deleteTransaction(tr, id);
+    return;
+  }
 
   const chip = e.target.closest(".category-chip");
   if (chip && !tr.querySelector(".cell-edit-select")) {

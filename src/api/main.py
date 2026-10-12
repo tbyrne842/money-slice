@@ -16,6 +16,7 @@ import os
 import secrets
 import tempfile
 from datetime import date as date_type
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -330,7 +331,8 @@ async def import_csv(
         txn.source = source
 
     db = get_db()
-    saved = save_transactions_detailed(parsed.transactions, db=db)
+    excluded = {d["source_hash"] for d in db.import_exclusions.find({"user": user}, {"source_hash": 1})}
+    saved = save_transactions_detailed(parsed.transactions, db=db, excluded=excluded)
     matched, unmatched = categorisation_rules.run(db=db)
     sharing_result = apply_defaults_module.apply_defaults(db)
     record_import(db, user, mapping, source, parsed, saved)
@@ -345,6 +347,7 @@ async def import_csv(
         "rows_in_file": parsed.rows_in_file,
         "skipped_no_amount": parsed.skipped_no_amount,
         "already_imported": saved.already_imported,
+        "previously_deleted": saved.previously_deleted,
         "identical_extra_rows": parsed.identical_extra_rows,
         "identical_rows": parsed.identical_groups[:50],
         "date_from": parsed.date_from.isoformat() if parsed.date_from else None,
@@ -430,6 +433,33 @@ def patch_transaction(
     updated = db.transactions.find_one({"_id": object_id, "owner": user})
     updated["_id"] = str(updated["_id"])
     return updated
+
+
+@app.delete("/api/transactions/{transaction_id}")
+def delete_transaction(transaction_id: str, user: str = Depends(current_user)) -> dict:
+    try:
+        object_id = ObjectId(transaction_id)
+    except InvalidId as exc:
+        raise HTTPException(
+            status_code=400, detail=f"'{transaction_id}' is not a valid transaction id."
+        ) from exc
+
+    db = get_db()
+    # Scoped to the owner, as PATCH is: someone else's transaction looks like a missing one.
+    txn = db.transactions.find_one({"_id": object_id, "owner": user})
+    if txn is None:
+        raise HTTPException(status_code=404, detail=f"No transaction with id '{transaction_id}'.")
+
+    db.transactions.delete_one({"_id": object_id, "owner": user})
+    # Remember deleted imported rows so uploading the same statement again does not
+    # bring them back. Manual rows are never re-imported, so they need no marker.
+    if txn.get("source") != "manual" and txn.get("source_hash"):
+        db.import_exclusions.update_one(
+            {"user": user, "source_hash": txn["source_hash"]},
+            {"$set": {"deleted_at": datetime.now(timezone.utc).replace(tzinfo=None)}},
+            upsert=True,
+        )
+    return {"deleted": transaction_id}
 
 
 # Serves index.html/app.js/style.css. Mounted last so it doesn't shadow

@@ -33,6 +33,7 @@ def ensure_indexes(db: Database) -> None:
     db.households.create_index([("members.username", ASCENDING)])
     db.settle_ups.create_index([("household_id", ASCENDING), ("date", ASCENDING)])
     db.import_log.create_index([("user", ASCENDING), ("at", DESCENDING)])
+    db.import_exclusions.create_index([("user", ASCENDING), ("source_hash", ASCENDING)], unique=True)
     db.accounts.create_index([("id", ASCENDING)], unique=True)
 
 

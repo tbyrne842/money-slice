@@ -32,6 +32,7 @@ def record_import(db, user: str, mapping: str, source: str, parsed, saved) -> No
             "already_imported": saved.already_imported,
             "repeated_in_file": saved.repeated_in_file,
             "identical_extra_rows": parsed.identical_extra_rows,
+            "previously_deleted": saved.previously_deleted,
             "date_from": parsed.date_from.isoformat() if parsed.date_from else None,
             "date_to": parsed.date_to.isoformat() if parsed.date_to else None,
         }
