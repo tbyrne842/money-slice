@@ -79,16 +79,23 @@ class Transaction(BaseModel):
             raise ValueError(f"amount must be a finite number, got {v!r}")
         return v
 
-    def compute_source_hash(self) -> str:
+    def compute_source_hash(self, occurrence: int = 1) -> str:
         """
         Idempotency key. Same account + date + amount + description
         should never be imported twice, even if you re-run a CSV import
         with overlapping date ranges (which you will, constantly).
+
+        occurrence numbers identical rows within one file: two genuine
+        purchases of the same thing on the same day are two transactions.
+        The first occurrence keeps the original key, so every hash
+        stored before this existed is unchanged.
         """
         key = f"{self.account_id}|{self.date.isoformat()}|{self.amount}|{self.description_raw}"
+        if occurrence > 1:
+            key += f"|#{occurrence}"
         return hashlib.sha256(key.encode()).hexdigest()
 
-    def finalize(self) -> "Transaction":
-        self.source_hash = self.compute_source_hash()
+    def finalize(self, occurrence: int = 1) -> "Transaction":
+        self.source_hash = self.compute_source_hash(occurrence)
         self.id = self.source_hash
         return self

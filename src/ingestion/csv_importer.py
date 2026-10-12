@@ -81,6 +81,13 @@ class ParseResult:
     transactions: list[Transaction]
     rows_in_file: int
     skipped_no_amount: int
+    # Groups of identical rows (same date, amount, description) in the file.
+    # Each is imported as separate purchases; copies is how many were in the file.
+    identical_groups: list[dict] = field(default_factory=list)
+
+    @property
+    def identical_extra_rows(self) -> int:
+        return sum(g["copies"] - 1 for g in self.identical_groups)
 
     @property
     def date_from(self) -> date | None:
@@ -97,6 +104,8 @@ def parse_csv_detailed(file_path: str, account_id: str, mapping_name: str, owner
 
     transactions = []
     skipped_no_amount = 0
+    copies_seen: dict[str, int] = {}
+    groups: dict[str, dict] = {}
     for _, row in df.iterrows():
         if not row_has_valid_amount(row, mapping):
             skipped_no_amount += 1
@@ -122,9 +131,28 @@ def parse_csv_detailed(file_path: str, account_id: str, mapping_name: str, owner
             source_category=source_category,
             source="csv",
         ).finalize()
+
+        # Identical rows are separate purchases: number the 2nd, 3rd... so each
+        # gets its own key. The set of keys for N copies is the same whatever
+        # order the bank lists them in, so re-uploads stay idempotent.
+        occurrence = copies_seen.get(txn.source_hash, 0) + 1
+        copies_seen[txn.source_hash] = occurrence
+        if occurrence > 1:
+            group = groups.setdefault(
+                txn.source_hash,
+                {"date": txn.date.isoformat(), "description": txn.description_raw, "amount": txn.amount, "copies": 1},
+            )
+            group["copies"] = occurrence
+            txn.finalize(occurrence)
         transactions.append(txn)
 
-    return ParseResult(transactions, rows_in_file=len(df), skipped_no_amount=skipped_no_amount)
+    identical_groups = sorted(groups.values(), key=lambda g: (g["date"], g["description"]))
+    return ParseResult(
+        transactions,
+        rows_in_file=len(df),
+        skipped_no_amount=skipped_no_amount,
+        identical_groups=identical_groups,
+    )
 
 
 def parse_csv(file_path: str, account_id: str, mapping_name: str, owner: str | None = None) -> list[Transaction]:
@@ -144,8 +172,7 @@ def list_mapping_names() -> list[str]:
 class SaveResult:
     inserted: int = 0
     already_imported: int = 0  # hash already in the database from an earlier import
-    repeated_in_file: int = 0  # same hash earlier in this same file (see note below)
-    repeated_rows: list[dict] = field(default_factory=list)  # which rows, with extra_copies skipped
+    repeated_in_file: int = 0  # same key twice in one batch (CSV parsing numbers repeats, so normally 0)
     new_transactions: list[Transaction] = field(default_factory=list)
 
     @property
@@ -156,11 +183,8 @@ class SaveResult:
 def save_transactions_detailed(transactions: list[Transaction], db=None) -> SaveResult:
     """Insert transactions, reporting why each non-inserted row was skipped.
 
-    repeated_in_file matters because the dedup hash has no occurrence
-    number: two genuine identical purchases on one day (same account,
-    date, amount and description) share a hash, so the second is dropped.
-    Counting these separately lets the UI flag them instead of hiding them
-    among re-imported rows.
+    parse_csv_detailed numbers identical rows, so a batch from a CSV has no
+    repeated keys. repeated_in_file is a safety net for other callers.
     """
     if db is None:
         db = get_db()
@@ -168,20 +192,9 @@ def save_transactions_detailed(transactions: list[Transaction], db=None) -> Save
 
     result = SaveResult()
     seen_in_file: set[str] = set()
-    repeats: dict[str, dict] = {}
     for txn in transactions:
         if txn.source_hash in seen_in_file:
             result.repeated_in_file += 1
-            row = repeats.setdefault(
-                txn.source_hash,
-                {
-                    "date": txn.date.isoformat(),
-                    "description": txn.description_raw,
-                    "amount": txn.amount,
-                    "extra_copies": 0,
-                },
-            )
-            row["extra_copies"] += 1
             continue
         seen_in_file.add(txn.source_hash)
         try:
@@ -191,7 +204,6 @@ def save_transactions_detailed(transactions: list[Transaction], db=None) -> Save
         except DuplicateKeyError:
             result.already_imported += 1  # already imported - expected on re-runs
 
-    result.repeated_rows = sorted(repeats.values(), key=lambda r: (r["date"], r["description"]))
     return result
 
 

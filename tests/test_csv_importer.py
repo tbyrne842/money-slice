@@ -188,16 +188,65 @@ def test_save_transactions_tuple_total_matches_detailed_duplicates(mongo_db):
     assert save_transactions([txn, twin]) == (1, 1)
 
 
-def test_save_detailed_lists_which_rows_were_repeated_and_how_many_copies(mongo_db):
-    def txn(day, desc):
-        return Transaction(
-            account_id="acct", owner="tiarnan", date=date(2026, 9, day), amount=-2.5, description_raw=desc
-        ).finalize()
+# --- identical rows are separate purchases (Phase 11) -----------------------
 
-    result = save_transactions_detailed([txn(2, "B"), txn(2, "B"), txn(2, "B"), txn(1, "A"), txn(1, "A"), txn(3, "C")])
+COFFEE_HEADER = "Date,Description,Debit Amount,Credit Amount\n"
 
-    assert result.repeated_in_file == 3
-    assert result.repeated_rows == [
-        {"date": "2026-09-01", "description": "A", "amount": -2.5, "extra_copies": 1},
-        {"date": "2026-09-02", "description": "B", "amount": -2.5, "extra_copies": 2},
+
+def _coffee_csv(tmp_path, copies, name="c.csv"):
+    path = tmp_path / name
+    path.write_text(COFFEE_HEADER + "01/09/2026,COFFEE SHOP,2.50,\n" * copies)
+    return str(path)
+
+
+def test_first_occurrence_keeps_the_original_hash_and_repeats_get_their_own(tmp_path):
+    import hashlib
+
+    result = parse_csv_detailed(_coffee_csv(tmp_path, 3), "acct", "generic_uk_debit_credit")
+    original = hashlib.sha256("acct|2026-09-01|-2.5|COFFEE SHOP".encode()).hexdigest()
+
+    hashes = [t.source_hash for t in result.transactions]
+    assert hashes[0] == original  # unchanged, so existing stored rows still dedupe
+    assert len(set(hashes)) == 3
+    assert [t.id for t in result.transactions] == hashes
+    assert result.identical_groups == [
+        {"date": "2026-09-01", "description": "COFFEE SHOP", "amount": -2.5, "copies": 3}
     ]
+    assert result.identical_extra_rows == 2
+
+
+def test_single_rows_have_no_identical_groups(tmp_path):
+    result = parse_csv_detailed(_coffee_csv(tmp_path, 1), "acct", "generic_uk_debit_credit")
+    assert result.identical_groups == []
+    assert result.identical_extra_rows == 0
+
+
+def test_identical_rows_are_all_imported_and_reupload_is_idempotent(tmp_path, mongo_db):
+    path = _coffee_csv(tmp_path, 3)
+    first = save_transactions_detailed(parse_csv_detailed(path, "acct", "generic_uk_debit_credit").transactions)
+    again = save_transactions_detailed(parse_csv_detailed(path, "acct", "generic_uk_debit_credit").transactions)
+
+    assert (first.inserted, first.already_imported) == (3, 0)
+    assert (again.inserted, again.already_imported) == (0, 3)
+    assert mongo_db.transactions.count_documents({}) == 3
+
+
+def test_overlapping_files_with_different_copy_counts_only_add_the_missing_ones(tmp_path, mongo_db):
+    def save(copies, name):
+        parsed = parse_csv_detailed(_coffee_csv(tmp_path, copies, name), "acct", "generic_uk_debit_credit")
+        return save_transactions_detailed(parsed.transactions)
+
+    assert save(1, "a.csv").inserted == 1
+    later = save(2, "b.csv")  # a later export shows the second coffee too
+    assert (later.inserted, later.already_imported) == (1, 1)
+    assert save(2, "c.csv").inserted == 0
+    assert mongo_db.transactions.count_documents({}) == 2
+
+
+def test_same_description_on_different_days_is_not_grouped(tmp_path):
+    path = tmp_path / "d.csv"
+    path.write_text(COFFEE_HEADER + "01/09/2026,COFFEE SHOP,2.50,\n02/09/2026,COFFEE SHOP,2.50,\n")
+    result = parse_csv_detailed(str(path), "acct", "generic_uk_debit_credit")
+
+    assert result.identical_groups == []
+    assert len({t.source_hash for t in result.transactions}) == 2
